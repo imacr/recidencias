@@ -12,6 +12,9 @@
   z-index: 1000;
   font-family: "Arial", sans-serif;
   box-shadow: 2px 0 8px rgba(255, 255, 255, 0.05);
+   overflow-y: auto;   /* Scroll vertical */
+  scrollbar-width: thin;           /* Para navegadores modernos */
+  scrollbar-color: #555 #000;    
 }
 
 /* Pantallas grandes */
@@ -153,7 +156,7 @@
   border-color: rgba(255, 255, 255, 0.3);
 }
 .sidebar-menu a.active i {
-  color: red;
+  color: rgb(180, 38, 38);
 }
 .sidebar-menu a.active::after {
   width: 100%;

@@ -39,7 +39,19 @@ import FrecuenciasPorMarca from "./pages/FrecuenciasPorMarca";
 import MantenimientosProgramados from "./pages/MantenimientosProgramados";
 import Asignaciones from "./pages/Asignaciones";
 import CalendarioAnual from "./pages/Calendario";
+import HistorialGarantias from "./pages/Historial_garantias";
+import HistorialAsignaciones from "./pages/Historial_asignaciones";
+import ListaSolicitudesEdicion from "./pages/SolicitudesPendientes";
+import Mensajeschofer from "./pages/mensajes_chofer";
+import DatosChoferUnidad from "./pages/DatosChoferUnidad";
+import Empresas from "./pages/empresa";
+import Sucursales from "./pages/sucursales";
+import CambiarContraseña from "./pages/Cambiarcontrasenia";
+import Alertas from "./pages/Alertas";
+import HistorialMantenimientos from "./pages/mantenimientos_realizados";
+import MantenimientosMayores from "./pages/mantenimeintosmayores";
 
+//import Mensajeschofer from "./pages/chofer_mensajes";
 // ====================================================
 // CONTENIDO PRINCIPAL DE LA APP
 // ====================================================
@@ -47,6 +59,7 @@ function AppContent({ isLoggedIn, onLogin, onLogout, loading, usuarioId }) {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [rol, setRol] = useState(null);
   const toggleSidebar = () => setSidebarVisible(!sidebarVisible);
+const [showChangePassword, setShowChangePassword] = useState(false);
 
   // Recuperar rol al cargar
   useEffect(() => {
@@ -100,7 +113,8 @@ function AppContent({ isLoggedIn, onLogin, onLogout, loading, usuarioId }) {
         <>
           {sidebarVisible && <Sidebar />}
           <div className={`main-content ${sidebarVisible ? "" : "full-width"}`}>
-            <Header onLogout={onLogout} toggleSidebar={toggleSidebar} />
+          <Header onLogout={onLogout} toggleSidebar={toggleSidebar} />
+
             <div className="content">
               <Routes>
                 {/* Rutas generales solo si no es chofer */}
@@ -125,7 +139,12 @@ function AppContent({ isLoggedIn, onLogin, onLogout, loading, usuarioId }) {
                     <Route path="/mantenimientos_programado" element={<MantenimientosProgramados />} />
                     <Route path="/Asignaciones" element={<Asignaciones />} />
                     <Route path="/Calendario" element={<CalendarioAnual />} />
-
+                    <Route path="/HistorialGarantias" element={<HistorialGarantias />} />
+                    <Route path="/Historialasignaciones" element={<HistorialAsignaciones />} />
+                    <Route path="/Empresas" element={<Empresas />} />
+                    <Route path="/Sucursales" element={<Sucursales />} />
+                    <Route path="/Mantenimientos_realizados" element={<HistorialMantenimientos />} />
+                    <Route path="/mayores" element={<MantenimientosMayores />} />
 
                   </>
                 )}
@@ -135,12 +154,21 @@ function AppContent({ isLoggedIn, onLogin, onLogout, loading, usuarioId }) {
                   <>
                     <Route path="/chofer/solicitudes" element={<ChoferFallas usuarioId={usuarioId} />} />
                     <Route path="/chofer/listasolicitudes" element={<ListaSolicitudes usuarioId={usuarioId} />} />
+                    <Route path="/Solicitudespendiente" element={<ListaSolicitudesEdicion />} />
+                    <Route path="/chat_chofer" element={<Mensajeschofer />} />
+                    <Route path="/Datoschfer" element={<DatosChoferUnidad />} />
+                    <Route path="/Cambiarcontra" element={<CambiarContraseña usuarioId={usuarioId} />} />
+                    <Route path="/Alertas" element={<Alertas />} />
+       
+
+
                   </>
                 )}
 
 
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
+
             </div>
           </div>
         </>

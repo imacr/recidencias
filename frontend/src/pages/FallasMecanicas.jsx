@@ -299,9 +299,20 @@ const FallasMecanicas = () => {
                 <input name="proveedor" value={formFalla.proveedor} onChange={e => setFormFalla(prev => ({ ...prev, proveedor: e.target.value }))} required />
               </div>
               <div className="form-group">
-                <label>Tipo Pago:</label>
-                <input name="tipo_pago" value={formFalla.tipo_pago} onChange={e => setFormFalla(prev => ({ ...prev, tipo_pago: e.target.value }))} required />
-              </div>
+              <label>Tipo Pago:</label>
+              <select
+                name="tipo_pago"
+                value={formFalla.tipo_pago}
+                onChange={e => setFormFalla(prev => ({ ...prev, tipo_pago: e.target.value }))}
+                required
+              >
+                <option value="">Seleccione un tipo de pago</option>
+                <option value="Efectivo">Efectivo</option>
+                <option value="Crédito">Crédito</option>
+                <option value="Transferencia">Transferencia</option>
+              </select>
+            </div>
+
             </div>
 
             <div className="form-row">

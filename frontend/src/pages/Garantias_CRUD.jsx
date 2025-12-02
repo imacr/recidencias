@@ -17,7 +17,9 @@ const Crudgarantias = ({ onClose, onCreate, garantia }) => {
     inicio_vigencia: '',
     vigencia: '',
     prima: '',
-    anos_vigencia: 1
+    anos_vigencia: 1,
+    telefono_fijo: '',       // nuevo
+    telefono_celular: ''     // nuevo
   });
   const [archivo, setArchivo] = useState(null);
 
@@ -44,7 +46,9 @@ const Crudgarantias = ({ onClose, onCreate, garantia }) => {
         inicio_vigencia: garantia.inicio_vigencia,
         vigencia: garantia.vigencia,
         prima: garantia.prima,
-        anos_vigencia: diffYears || 1
+        anos_vigencia: diffYears || 1,
+        telefono_fijo: garantia.telefono_fijo || '',
+        telefono_celular: garantia.telefono_celular || ''
       });
       setVerificacion({ puede_renovar: true });
     }
@@ -62,7 +66,9 @@ const Crudgarantias = ({ onClose, onCreate, garantia }) => {
       inicio_vigencia: '',
       vigencia: '',
       prima: '',
-      anos_vigencia: 1
+      anos_vigencia: 1,
+      telefono_fijo: '',
+      telefono_celular: ''
     }));
   };
 
@@ -99,7 +105,7 @@ const Crudgarantias = ({ onClose, onCreate, garantia }) => {
         if (data.puede_renovar) {
           Swal.fire({
             title: '¡Listo para registrar!',
-            text: 'Ya es tiempo de registrar o renovar la garantía.',
+            text: 'Ya es tiempo de registrar o renovar la Poliza.',
             icon: 'success',
             confirmButtonColor: '#0d6efd',
             confirmButtonText: 'Aceptar',
@@ -107,8 +113,8 @@ const Crudgarantias = ({ onClose, onCreate, garantia }) => {
           });
         } else {
           Swal.fire({
-            title: 'Garantía vigente',
-            html: `No se puede registrar una nueva garantía todavía.<br>
+            title: 'Poliza vigente',
+            html: `No se puede registrar una nueva Poliza todavía.<br>
                    Vigencia: ${vigencia.toLocaleDateString()}<br>
                    Restan <b>${diasRestantes}</b> días.`,
             icon: 'info',
@@ -125,7 +131,7 @@ const Crudgarantias = ({ onClose, onCreate, garantia }) => {
       console.error(err);
       Swal.fire({
         title: 'Error',
-        text: 'Error al verificar la garantía',
+        text: 'Error al verificar la Poliza',
         icon: 'error',
         confirmButtonColor: '#d33',
         customClass: { popup: 'swal2-popup-over-modal' }
@@ -169,7 +175,7 @@ const Crudgarantias = ({ onClose, onCreate, garantia }) => {
       console.error(err);
       Swal.fire({
         title: 'Error',
-        text: 'Error al enviar la garantía',
+        text: 'Error al enviar la Poliza',
         icon: 'error',
         confirmButtonColor: '#d33',
         customClass: { popup: 'swal2-popup-over-modal' }
@@ -184,25 +190,31 @@ const Crudgarantias = ({ onClose, onCreate, garantia }) => {
 
   return (
     <Modal onClose={onClose}>
-      <h2>{garantia ? 'Editar Garantía' : 'Registrar / Renovar Garantía'}</h2>
+      <h2>{garantia ? 'Editar Poliza' : 'Registrar / Renovar Poliza'}</h2>
 
       {!garantia && (
         <div style={{ marginBottom: '1rem' }}>
           <Select
-            options={unidadOptions}
-            value={unidadSeleccionada}
-            onChange={handleUnidadChange}
-            placeholder="Selecciona una unidad..."
-            isSearchable
-          />
+              options={unidadOptions}
+              value={unidadSeleccionada}
+              onChange={handleUnidadChange}
+              placeholder="Selecciona una unidad..."
+              isSearchable
+              menuPortalTarget={document.body}    // renderiza el dropdown en body
+              menuPosition="fixed"                // posición fija para que siga al scroll
+              styles={{
+                menuPortal: base => ({ ...base, zIndex: 9999 })  // asegurar que quede encima
+              }}
+            />
+
           <button type="button" onClick={verificarGarantia} style={{ marginTop: '0.5rem' }}>
-            Verificar Garantía
+            Verificar Poliza
           </button>
         </div>
       )}
 
       {verificacion && verificacion.existe && !verificacion.puede_renovar && (
-        <p style={{ color: 'red' }}>La garantía aún está vigente y no puede registrarse nueva.</p>
+        <p style={{ color: 'red' }}>La Poliza aún está vigente y no puede registrarse nueva.</p>
       )}
 
       {(verificacion && (!verificacion.existe || verificacion.puede_renovar)) || garantia ? (
@@ -215,6 +227,11 @@ const Crudgarantias = ({ onClose, onCreate, garantia }) => {
           <input type="number" name="anos_vigencia" value={formData.anos_vigencia} min={1} onChange={handleChange} />
           <input type="date" name="vigencia" value={formData.vigencia} readOnly />
           <input type="number" name="prima" placeholder="Prima" value={formData.prima} onChange={handleChange} required />
+
+          {/* Nuevos campos de teléfono */}
+          <input name="telefono_fijo" placeholder="Teléfono fijo" value={formData.telefono_fijo} onChange={handleChange} />
+          <input name="telefono_celular" placeholder="Teléfono celular" value={formData.telefono_celular} onChange={handleChange} />
+
           <input type="file" onChange={handleFileChange} accept=".pdf,.jpg,.png" />
 
           <div className="modal-actions">

@@ -121,3 +121,170 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+
+
+.chat-bubble {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  word-wrap: break-word;
+  margin-bottom: 8px;
+  position: relative;
+  font-size: 0.9rem;
+  line-height: 1.3;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  transition: background 0.2s;
+}
+
+.chat-bubble.derecha {
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-bubble.izquierda {
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+/* Colores estilo WhatsApp */
+.chat-bubble.azul { 
+  background-color: #34B7F1; /* azul WhatsApp */
+  color: white; 
+}
+
+.chat-bubble.verde { 
+  background-color: #DCF8C6; /* verde WhatsApp claro */
+  color: black; 
+}
+
+.chat-bubble.gris { 
+  background-color: #ECE5DD; /* gris WhatsApp */
+  color: black; 
+}
+
+/* Usuario del mensaje */
+.chat-user {
+  font-weight: bold;
+  font-size: 0.85rem;
+  display: block;
+  margin-bottom: 4px;
+  color: #075E54; /* siempre visible sobre burbujas claras */
+}
+
+/* Fecha del mensaje */
+.chat-date {
+  font-size: 0.7rem;
+  opacity: 0.7;
+  display: block;
+  margin-top: 4px;
+  text-align: right;
+  color: #555; /* más contraste, siempre visible */
+}
+
+/* Imagen, video o PDF */
+.chat-image,
+.chat-video,
+.chat-pdf {
+  max-width: 100%;
+  border-radius: 12px;
+  margin-top: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* Overlay para PDFs dentro del chat */
+.mensajes-chofer-archivo {
+  position: relative;
+  cursor: pointer;
+  display: inline-block;
+}
+
+.mensajes-chofer-overlay-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-weight: bold;
+  background-color: rgba(0,0,0,0.5);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+
+/* Chat contenedor */
+.chat-mensajes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Textarea y botón de respuesta */
+.chat-textarea {
+  border: 1px solid #ccc;
+  border-radius: 12px;
+  padding: 8px;
+  font-size: 0.9rem;
+  width: 100%;
+  resize: vertical;
+}
+
+.chat-button {
+  background-color: #25D366; /* verde WhatsApp */
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: bold;
+  align-self: flex-end;
+  margin-top: 6px;
+  transition: background 0.2s;
+}
+
+.chat-button:hover {
+  background-color: #128C7E;
+}
+
+/* Formulario de respuesta estilo WhatsApp */
+.respuesta-form {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.respuesta-form textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  resize: vertical;
+  font-size: 14px;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.respuesta-form input[type="file"] {
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  padding: 5px;
+}
+
+.respuesta-form button {
+  background-color: #34B7F1; /* azul WhatsApp */
+  color: white;
+  border: none;
+  border-radius: 50px;
+  padding: 10px 20px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.respuesta-form button:hover {
+  background-color: #0B93F6; /* azul más oscuro */
+}

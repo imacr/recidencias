@@ -1,0 +1,199 @@
+/* Contenedor principal solo para MensajesChoferEpic */
+.mensajes-chofer-container {
+  max-width: 800px;   /* ancho máximo en pantallas grandes */
+  width: 95%;         /* ancho relativo para móviles */
+  margin: 0 auto;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  padding: 10px;
+}
+
+/* Cada solicitud */
+.mensajes-chofer-solicitud {
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+  max-height: 90vh;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  margin-bottom: 25px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Header de cada solicitud */
+.mensajes-chofer-solicitud-header {
+  background-color: #075e54;
+  color: white;
+  padding: 15px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+/* Contenedor de mensajes */
+.mensajes-chofer-mensajes {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background-color: #e5ddd5;
+}
+
+/* Burbujas de mensaje */
+.mensajes-chofer-bubble {
+  max-width: 70%; /* limita ancho en pantallas grandes */
+  padding: 12px 16px;
+  margin-bottom: 15px;
+  border-radius: 20px;
+  position: relative;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  word-wrap: break-word;
+  font-size: 14px;
+}
+
+.mensajes-chofer-bubble.chofer {
+  background-color: #dcf8c6;
+  margin-left: auto;
+}
+
+.mensajes-chofer-bubble.admin {
+  background-color: white;
+  margin-right: auto;
+  border: 1px solid #ccc;
+}
+
+/* Previsualización de archivos */
+.mensajes-chofer-archivo {
+  margin-top: 10px;
+  cursor: pointer;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  overflow: hidden;
+  position: relative;
+  height: 200px;
+  width: 100%;
+  max-width: 400px; /* no se estira demasiado */
+  background-color: #f9f9f9;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Texto overlay para previsualización */
+.mensajes-chofer-overlay-text {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  background-color: rgba(0,0,0,0.5);
+  color: #fff;
+  padding: 2px 5px;
+  font-size: 12px;
+  border-top-left-radius: 5px;
+}
+
+/* Footer de cada solicitud */
+.mensajes-chofer-footer {
+  flex-shrink: 0;
+  background: white;
+  padding: 15px;
+  border-top: 1px solid #ccc;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mensajes-chofer-footer-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.mensajes-chofer-textarea {
+  width: 100%;
+  padding: 10px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  resize: none;
+  font-size: 14px;
+}
+
+/* Botones */
+.mensajes-chofer-button {
+  background-color: #25d366;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: 0.3s;
+}
+
+.mensajes-chofer-button:hover {
+  background-color: #128c7e;
+}
+
+/* Modal */
+.mensajes-chofer-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.mensajes-chofer-modal-content {
+  position: relative;
+  background: #fff;
+  padding: 15px;
+  border-radius: 10px;
+  max-width: 95vw;
+  max-height: 95vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.mensajes-chofer-modal-close {
+  position: absolute;
+  top: 5px;
+  right: 10px;
+  font-size: 24px;
+  font-weight: bold;
+  background: transparent;
+  border: none;
+  color: #333;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.mensajes-chofer-modal-close:hover {
+  color: #ff0000;
+}
+
+.mensajes-chofer-modal-content img,
+.mensajes-chofer-modal-content video,
+.mensajes-chofer-modal-content iframe {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 10px;
+}
+
+/* Responsivo */
+@media (max-width: 768px) {
+  .mensajes-chofer-bubble {
+    max-width: 90%;
+  }
+  .mensajes-chofer-solicitud-header h3 {
+    font-size: 14px;
+  }
+  .mensajes-chofer-textarea {
+    font-size: 12px;
+  }
+  .mensajes-chofer-footer-actions .mensajes-chofer-button {
+    padding: 8px 16px;
+  }
+}

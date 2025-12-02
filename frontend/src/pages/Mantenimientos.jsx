@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react"; 
 import Swal from "sweetalert2";
-import { API_URL } from "../config"; // Asegúrate que aquí tengas tu backend base, ej: export const API_URL = "http://localhost:5000";
+import { API_URL } from "../config";
 
-export default function Mantenimientos() {
+export default function Mantenimientos({ registroPrellenado }) {
   const [tipos, setTipos] = useState([]);
   const [form, setForm] = useState({
     id_unidad: "",
@@ -15,10 +15,9 @@ export default function Mantenimientos() {
     cobertura_garantia: "",
     costo: "",
     observaciones: "",
-    url_comprobante: "",
+    url_comprobante: null,
   });
 
-  // Cargar tipos de mantenimiento
   useEffect(() => {
     fetch(`${API_URL}/tipos_mantenimiento`)
       .then((res) => res.json())
@@ -26,23 +25,44 @@ export default function Mantenimientos() {
       .catch((err) => console.error("Error cargando tipos:", err));
   }, []);
 
+  useEffect(() => {
+    if (registroPrellenado) {
+      setForm((prev) => ({
+        ...prev,
+        id_unidad: registroPrellenado.id_unidad,
+        tipo_mantenimiento: registroPrellenado.tipo,
+        kilometraje: registroPrellenado.kilometraje_actual || "",
+      }));
+    }
+  }, [registroPrellenado]);
+
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value, files } = e.target;
+    if (files) {
+      setForm((prev) => ({ ...prev, [name]: files[0] }));
+    } else {
+      setForm((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (!form.tipo_mantenimiento || !form.id_unidad || !form.fecha_realizacion) {
       Swal.fire("Campos incompletos", "Llena los obligatorios", "warning");
       return;
     }
 
+    const formData = new FormData();
+    Object.keys(form).forEach((key) => {
+      if (form[key] !== null && form[key] !== undefined) {
+        formData.append(key, form[key]);
+      }
+    });
+
     try {
       const res = await fetch(`${API_URL}/mantenimientos`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: formData,
       });
 
       if (res.ok) {
@@ -58,10 +78,11 @@ export default function Mantenimientos() {
           cobertura_garantia: "",
           costo: "",
           observaciones: "",
-          url_comprobante: "",
+          url_comprobante: null,
         });
       } else {
-        Swal.fire("Error", "No se pudo registrar el mantenimiento", "error");
+        const errData = await res.json();
+        Swal.fire("Error", errData.error || "No se pudo registrar", "error");
       }
     } catch (error) {
       console.error(error);
@@ -73,6 +94,8 @@ export default function Mantenimientos() {
     <div className="container mt-4">
       <h2 className="text-center mb-4">Registro de Mantenimientos</h2>
       <form onSubmit={handleSubmit} className="p-4 shadow rounded bg-light">
+
+        {/* Fila 1 */}
         <div className="row">
           <div className="col-md-4 mb-3">
             <label>Unidad (ID)</label>
@@ -81,11 +104,11 @@ export default function Mantenimientos() {
               name="id_unidad"
               value={form.id_unidad}
               onChange={handleChange}
+              placeholder="Ej: 101"
               className="form-control"
               required
             />
           </div>
-
           <div className="col-md-4 mb-3">
             <label>Tipo de Mantenimiento</label>
             <select
@@ -95,7 +118,7 @@ export default function Mantenimientos() {
               className="form-select"
               required
             >
-              <option value="">Selecciona...</option>
+              <option value="">Ej: Preventivo</option>
               {tipos.map((t) => (
                 <option key={t.id_tipo_mantenimiento} value={t.nombre_tipo}>
                   {t.nombre_tipo}
@@ -103,7 +126,6 @@ export default function Mantenimientos() {
               ))}
             </select>
           </div>
-
           <div className="col-md-4 mb-3">
             <label>Fecha Realización</label>
             <input
@@ -111,12 +133,14 @@ export default function Mantenimientos() {
               name="fecha_realizacion"
               value={form.fecha_realizacion}
               onChange={handleChange}
+              placeholder="Ej: 2025-11-27"
               className="form-control"
               required
             />
           </div>
         </div>
 
+        {/* Fila 2 */}
         <div className="row">
           <div className="col-md-4 mb-3">
             <label>Kilometraje</label>
@@ -124,11 +148,11 @@ export default function Mantenimientos() {
               type="number"
               name="kilometraje"
               value={form.kilometraje}
-              onChange={handleChange}
+              placeholder="Ej: 15000 km"
               className="form-control"
+              readOnly
             />
           </div>
-
           <div className="col-md-4 mb-3">
             <label>Realizado por</label>
             <input
@@ -136,10 +160,10 @@ export default function Mantenimientos() {
               name="realizado_por"
               value={form.realizado_por}
               onChange={handleChange}
+              placeholder="Ej: Juan Pérez"
               className="form-control"
             />
           </div>
-
           <div className="col-md-4 mb-3">
             <label>Costo (MXN)</label>
             <input
@@ -148,11 +172,13 @@ export default function Mantenimientos() {
               name="costo"
               value={form.costo}
               onChange={handleChange}
+              placeholder="Ej: 2500.50"
               className="form-control"
             />
           </div>
         </div>
 
+        {/* Fila 3 */}
         <div className="row">
           <div className="col-md-6 mb-3">
             <label>Empresa Garantía</label>
@@ -161,10 +187,10 @@ export default function Mantenimientos() {
               name="empresa_garantia"
               value={form.empresa_garantia}
               onChange={handleChange}
+              placeholder="Ej: Garantías XYZ S.A."
               className="form-control"
             />
           </div>
-
           <div className="col-md-6 mb-3">
             <label>Cobertura Garantía</label>
             <input
@@ -172,17 +198,20 @@ export default function Mantenimientos() {
               name="cobertura_garantia"
               value={form.cobertura_garantia}
               onChange={handleChange}
+              placeholder="Ej: Motor y transmisión por 1 año"
               className="form-control"
             />
           </div>
         </div>
 
+        {/* Textareas */}
         <div className="mb-3">
           <label>Descripción</label>
           <textarea
             name="descripcion"
             value={form.descripcion}
             onChange={handleChange}
+            placeholder="Ej: Cambio de aceite y filtro, revisión de frenos"
             className="form-control"
             rows="3"
           />
@@ -194,22 +223,25 @@ export default function Mantenimientos() {
             name="observaciones"
             value={form.observaciones}
             onChange={handleChange}
+            placeholder="Ej: Unidad entregada sin problemas, cliente satisfecho"
             className="form-control"
             rows="2"
           />
         </div>
 
+        {/* Archivo */}
         <div className="mb-3">
-          <label>URL del comprobante</label>
+          <label>Comprobante (Imagen o PDF)</label>
           <input
-            type="text"
+            type="file"
             name="url_comprobante"
-            value={form.url_comprobante}
+            accept="image/*,application/pdf"
             onChange={handleChange}
             className="form-control"
           />
         </div>
 
+        {/* Botón */}
         <div className="text-center">
           <button type="submit" className="btn btn-success">
             Registrar Mantenimiento

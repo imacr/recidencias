@@ -34,6 +34,8 @@ const Login = ({ onLogin }) => {
             const rol = data.user.rol; // 👈 agrega esto
 
             localStorage.setItem("usuarioId", usuarioId);
+            localStorage.setItem("usuarioNombre", data.user.nombre); // 👈 nombre real
+            
             localStorage.setItem("isLoggedIn", "true");
             localStorage.setItem("rol", rol); // 👈 guarda el rol
 
@@ -41,13 +43,11 @@ const Login = ({ onLogin }) => {
             onLogin(usuarioId);
 
             // Redirige según rol
-            if (rol === "admin") {
-                navigate("/admin/solicitudes");
-            } else if (rol === "chofer") {
-                navigate("/chofer/solicitudes");
-            } else {
-                navigate("/"); // fallback
-            }
+             setTimeout(() => {
+                if (rol === "admin") navigate("/");
+                else if (rol === "chofer") navigate("/Datoschfer");
+                else navigate("/"); // fallback
+            }, 50);
         }
         else {
                 setError(data.error || 'Credenciales inválidas');

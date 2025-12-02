@@ -1,40 +1,65 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Modal from "../components/Modal";
 import { BASE_URL } from "../config";
 import Swal from "sweetalert2";
 import './registro_usuario.css';
 
-const RegistrarUsuario = ({ show, onClose, onCreate }) => {
+const initialFormData = {
+  nombre: "",
+  usuario: "",
+  contraseña: "",
+  correo: "",
+  rol: "usuario",
+  estado: "activo",
+  chofer: null,
+  crearChofer: false,
+  curp: "",
+  calle: "",
+  colonia_localidad: "",
+  codpos: "",
+  municipio: "",
+  licencia_folio: "",
+  licencia_tipo: "",
+  licencia_vigencia: ""
+};
+
+const RegistrarUsuario = ({ show, onClose, onCreate, usuarioToEdit }) => {
   const API_URL = `${BASE_URL}/api/usuarios`;
 
-  const [formData, setFormData] = useState({
-    nombre: "",
-    usuario: "",
-    contraseña: "",
-    correo: "",
-    rol: "usuario",
-    estado: "activo",
-    chofer: null,
-    crearChofer: false,
-    curp: "",
-    calle: "",
-    colonia_localidad: "",
-    codpos: "",
-    municipio: "",
-    licencia_folio: "",
-    licencia_tipo: "",
-    licencia_vigencia: ""
-  });
-
+  const [formData, setFormData] = useState(initialFormData);
   const [choferesExistentes, setChoferesExistentes] = useState([]);
+
+  // Cargar datos del usuario si es edición
+  useEffect(() => {
+    if (usuarioToEdit) {
+      setFormData({
+        nombre: usuarioToEdit.nombre || "",
+        usuario: usuarioToEdit.usuario || "",
+        contraseña: "", // No mostrar la contraseña
+        correo: usuarioToEdit.correo || "",
+        rol: usuarioToEdit.rol || "usuario",
+        estado: usuarioToEdit.estado || "activo",
+        chofer: usuarioToEdit.id_chofer || null,
+        crearChofer: false,
+        curp: usuarioToEdit.chofer?.curp || "",
+        calle: usuarioToEdit.chofer?.calle || "",
+        colonia_localidad: usuarioToEdit.chofer?.colonia_localidad || "",
+        codpos: usuarioToEdit.chofer?.codpos || "",
+        municipio: usuarioToEdit.chofer?.municipio || "",
+        licencia_folio: usuarioToEdit.chofer?.licencia_folio || "",
+        licencia_tipo: usuarioToEdit.chofer?.licencia_tipo || "",
+        licencia_vigencia: usuarioToEdit.chofer?.licencia_vigencia || ""
+      });
+    } else {
+      setFormData(initialFormData);
+    }
+  }, [usuarioToEdit]);
 
   // Cargar choferes existentes si el rol es chofer
   useEffect(() => {
     if (formData.rol === "chofer") {
       fetch(`${BASE_URL}/api/choferes`, {
-        headers: {
-          "Authorization": `Bearer ${localStorage.getItem("token")}`
-        }
+        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
       })
         .then(res => res.json())
         .then(data => setChoferesExistentes(data))
@@ -66,20 +91,20 @@ const RegistrarUsuario = ({ show, onClose, onCreate }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (formData.rol === "chofer" && formData.crearChofer && !validarCamposChofer()) {
-      return;
-    }
+    if (formData.rol === "chofer" && formData.crearChofer && !validarCamposChofer()) return;
 
+    // Preparar payload
     const payload = {
       nombre: formData.nombre,
       usuario: formData.usuario,
-      contraseña: formData.contraseña,
       correo: formData.correo,
       rol: formData.rol,
       estado: formData.estado
     };
 
-    if (formData.rol === "chofer") {
+    if (formData.contraseña) payload.contraseña = formData.contraseña;
+
+    if (formData.rol === 'chofer') {
       if (formData.crearChofer) {
         payload.crear_chofer = true;
         payload.chofer_data = {
@@ -99,11 +124,14 @@ const RegistrarUsuario = ({ show, onClose, onCreate }) => {
     }
 
     try {
-      const response = await fetch(API_URL, {
-        method: "POST",
+      const url = usuarioToEdit ? `${API_URL}/${usuarioToEdit.id_usuario}` : API_URL;
+      const method = usuarioToEdit ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("token")}`
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem("token")}`
         },
         body: JSON.stringify(payload)
       });
@@ -113,32 +141,14 @@ const RegistrarUsuario = ({ show, onClose, onCreate }) => {
         throw new Error(errorText);
       }
 
-      const newUser = await response.json();
-      onCreate(newUser);
+      const data = await response.json();
+      onCreate(data); // Actualiza la tabla en el frontend
       onClose();
-
-      setFormData({
-        nombre: "",
-        usuario: "",
-        contraseña: "",
-        correo: "",
-        rol: "usuario",
-        estado: "activo",
-        chofer: null,
-        crearChofer: false,
-        curp: "",
-        calle: "",
-        colonia_localidad: "",
-        codpos: "",
-        municipio: "",
-        licencia_folio: "",
-        licencia_tipo: "",
-        licencia_vigencia: ""
-      });
+      if (!usuarioToEdit) setFormData(initialFormData);
 
       Swal.fire({
         title: '¡Éxito!',
-        text: 'Usuario agregado correctamente',
+        text: usuarioToEdit ? 'Usuario actualizado correctamente' : 'Usuario agregado correctamente',
         icon: 'success',
         confirmButtonColor: '#28a745'
       });
@@ -147,7 +157,7 @@ const RegistrarUsuario = ({ show, onClose, onCreate }) => {
       console.error(err);
       Swal.fire({
         title: 'Error',
-        text: `No se pudo registrar usuario: ${err.message}`,
+        text: `No se pudo guardar el usuario: ${err.message}`,
         icon: 'error',
         confirmButtonColor: '#dc3545'
       });
@@ -158,11 +168,11 @@ const RegistrarUsuario = ({ show, onClose, onCreate }) => {
 
   return (
     <Modal onClose={onClose}>
-      <h2>Registrar Nuevo Usuario</h2>
+      <h2>{usuarioToEdit ? "Actualizar Usuario" : "Registrar Nuevo Usuario"}</h2>
       <form onSubmit={handleSubmit} className="modal-form">
         <input type="text" name="nombre" placeholder="Nombre completo" value={formData.nombre} onChange={handleChange} required />
         <input type="text" name="usuario" placeholder="Usuario" value={formData.usuario} onChange={handleChange} required />
-        <input type="password" name="contraseña" placeholder="Contraseña" value={formData.contraseña} onChange={handleChange} required />
+        <input type="password" name="contraseña" placeholder={usuarioToEdit ? "Nueva contraseña (opcional)" : "Contraseña"} value={formData.contraseña} onChange={handleChange} />
         <input type="email" name="correo" placeholder="Correo electrónico" value={formData.correo} onChange={handleChange} required />
 
         <select name="rol" value={formData.rol} onChange={handleChange}>
@@ -206,7 +216,7 @@ const RegistrarUsuario = ({ show, onClose, onCreate }) => {
         )}
 
         <div className="modal-actions">
-          <button type="submit" className="btn-guardar">Registrar</button>
+          <button type="submit" className="btn-guardar">{usuarioToEdit ? "Actualizar" : "Registrar"}</button>
           <button type="button" className="btn-cancelar" onClick={onClose}>Cancelar</button>
         </div>
       </form>

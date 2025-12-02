@@ -22,7 +22,19 @@ const Unidades = () => {
   const MySwal = withReactContent(Swal);
   const [pdfFrontal, setPdfFrontal] = useState(null);
   const [pdfTrasero, setPdfTrasero] = useState(null);
-  
+  const [agregarPlacas, setAgregarPlacas] = useState(false);
+  const [fotoUnidad, setFotoUnidad] = useState(null);
+  const [pdfFactura, setPdfFactura] = useState(null);
+  const [empresas, setEmpresas] = useState([]);
+  const [sucursales, setSucursales] = useState([]);
+  const [sucursalesFiltradas, setSucursalesFiltradas] = useState([]);
+  const [empresaSeleccionada, setEmpresaSeleccionada] = useState('');
+  const [sucursalSeleccionada, setSucursalSeleccionada] = useState('');
+  const [comprobantePago, setComprobantePago] = useState(null);
+  const [tarjetaCirculacion, setTarjetaCirculacion] = useState(null);
+
+
+
   const API_URL = `${BASE_URL}/api/unidades`;
 
 const [archivos, setArchivos] = useState({});
@@ -34,9 +46,30 @@ const handleChangeArchivo = (e) => {
   });
 };
 
+useEffect(() => {
+  // Cargar empresas
+  fetch(`${BASE_URL}/empresas`)
+    .then(res => res.json())
+    .then(data => setEmpresas(data))
+    .catch(err => console.error(err));
+
+  // Cargar todas las sucursales (luego filtraremos)
+  
+}, []);
+
+useEffect(() => {
+  if (!empresaSeleccionada) return setSucursales([]);
+
+  fetch(`${BASE_URL}/sucursales?empresa=${empresaSeleccionada}`)
+    .then(res => res.json())
+    .then(data => setSucursales(data))
+    .catch(err => console.error(err));
+}, [empresaSeleccionada]);
+
 //----------------------------------------------------------------------------------
-//estado para nueva unidad
 const [nuevaUnidad, setNuevaUnidad] = useState({
+  id_empresa: "",
+  sucursal: "",
   marca: "",
   vehiculo: "",
   modelo: "",
@@ -50,15 +83,15 @@ const [nuevaUnidad, setNuevaUnidad] = useState({
   sim_gps: "",
   uid: "",
   propietario: "",
-  sucursal: "",
   compra_arrendado: "",
   fecha_adquisicion: "",
-  // Datos de placa
   folio: "",
   placa: "",
   fecha_expedicion: "",
   fecha_vigencia: "",
+  monto_pago: "",
 });
+
 
 //----------------------------------------------------------------------------------
 // Obtener unidades
@@ -105,70 +138,97 @@ const handleChangeNuevaUnidad = (e) => {
 
 
 
-
-
 //----------------------------------------------------------------------------------
 // Actualizar unidad
 const handleUpdateUnidad = async (e) => {
   e.preventDefault();
+
   try {
-    console.log("ID de unidad a actualizar:", unidadToEdit?.id_unidad);
-    
-    const payload = {
-      marca: unidadToEdit.marca,
-      vehiculo: unidadToEdit.vehiculo,
-      modelo: unidadToEdit.modelo,
-      niv: unidadToEdit.niv,
-      fecha_adquisicion: unidadToEdit.fecha_adquisicion,
-      color: unidadToEdit.mas_datos?.color,
-      clase_tipo: unidadToEdit.mas_datos?.clase_tipo,
-      motor: unidadToEdit.mas_datos?.motor,
-      transmision: unidadToEdit.mas_datos?.transmision,
-      combustible: unidadToEdit.mas_datos?.combustible,
-      sucursal: unidadToEdit.mas_datos?.sucursal,
-      compra_arrendado: unidadToEdit.mas_datos?.compra_arrendado,
-      propietario: unidadToEdit.mas_datos?.propietario,
-      uid: unidadToEdit.mas_datos?.uid,
-      telefono_gps: unidadToEdit.mas_datos?.telefono_gps,
-      sim_gps: unidadToEdit.mas_datos?.sim_gps,
-    };
+    const formData = new FormData();
 
-    console.log("Payload a enviar:", payload);
+    // ----------------------------
+    // Campos directos de unidadToEdit
+    // ----------------------------
+    const camposDirectos = [
+      "marca", "vehiculo", "modelo", "fecha_adquisicion",
+      "valor_factura", "kilometraje_actual", "id_empresa", "sucursal",
+      "niv"  
+    ];
 
+    camposDirectos.forEach(field => {
+      let valor = unidadToEdit[field];
+      formData.append(field, valor !== undefined && valor !== null ? valor.toString() : "");
+    });
+
+    // ----------------------------
+    // Campos dentro de mas_datos
+    // ----------------------------
+    const camposMasDatos = [
+      "clase_tipo", "motor", "transmision", "combustible", 
+      "color", "propietario", "compra_arrendado", 
+      "telefono_gps", "sim_gps", "uid"
+    ];
+
+    camposMasDatos.forEach(field => {
+      let valor = unidadToEdit.mas_datos?.[field];
+      formData.append(field, valor !== undefined && valor !== null ? valor.toString() : "");
+    });
+
+    // ----------------------------
+    // Archivos opcionales
+    // ----------------------------
+    if (fotoUnidad) formData.append("foto_unidad", fotoUnidad);
+    if (pdfFactura) formData.append("pdf_factura", pdfFactura);
+    if (pdfFrontal) formData.append("pdf_frontal", pdfFrontal);
+    if (pdfTrasero) formData.append("pdf_trasero", pdfTrasero);
+
+    // ----------------------------
+    // Debug: revisar datos antes de enviar
+    // ----------------------------
+    console.log("=== FormData a enviar ===");
+    for (let pair of formData.entries()) {
+      console.log(pair[0], ":", pair[1]);
+    }
+
+    // ----------------------------
+    // Petición PUT al backend
+    // ----------------------------
     const response = await fetch(`${API_URL}/${unidadToEdit.id_unidad}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      method: "PUT",
+      body: formData
     });
 
     if (!response.ok) {
       const errorResponse = await response.json();
-      console.error("Error de la API:", errorResponse);
-      throw new Error('Error al actualizar unidad');
+      throw new Error(errorResponse.error || "Error al actualizar unidad");
     }
 
-    console.log("Respuesta de la API:", response);
-    setShowModal(false);
-    MySwal.fire({
-      title: '¡Éxito!',
-      text: 'Unidad actualizada correctamente',
-      icon: 'success',
-      iconColor: '#3edb56ff',
-      color: '#000000',
-      confirmButtonColor: '#28a745', // verde, puedes poner cualquier color hex
+    const data = await response.json();
+    console.log("Unidad actualizada:", data);
 
-      confirmButtonText: 'Aceptar',
-    }).then(() => {
-      setShowSuccessModal(false); // Esto se ejecuta al cerrar el alert
-    });
+    // ----------------------------
+    // Refrescar lista y cerrar modal
+    // ----------------------------
+    const unidadesActualizadas = await fetch(API_URL).then(r => r.json());
+    setUnidades(unidadesActualizadas);
+    setShowModal(false);
     setUnidadToEdit(null);
 
-    // Refrescar lista
-    const data = await fetch(API_URL).then(r => r.json());
-    console.log("Datos de unidades después de la actualización:", data);
-    setUnidades(data);
+    Swal.fire({
+      title: "¡Éxito!",
+      text: "Unidad actualizada correctamente",
+      icon: "success",
+      confirmButtonColor: "#28a745",
+    });
+
   } catch (err) {
-    alert(err.message);
+    console.error(err);
+    Swal.fire({
+      title: "Error",
+      text: err.message,
+      icon: "error",
+      confirmButtonColor: "#d33",
+    });
   }
 };
 
@@ -222,40 +282,67 @@ const handleDeleteUnidad = async (id_unidad) => {
 // Agregar nueva unidad
 const handleAgregarUnidad = async (e) => {
   e.preventDefault();
+
   try {
+    // Validaciones básicas
+    if (!nuevaUnidad.id_empresa) throw new Error("Seleccione una empresa");
+    if (!nuevaUnidad.sucursal) throw new Error("Seleccione una sucursal");
+
     const formData = new FormData();
 
-    // Agregar todos los campos de nuevaUnidad
+    // Agregar campos de texto excepto id_empresa e id_sucursal
     for (const key in nuevaUnidad) {
-      if (nuevaUnidad[key] !== null) {
+      if (nuevaUnidad[key] !== null && nuevaUnidad[key] !== "" && key !== "id_empresa" && key !== "sucursal") {
         formData.append(key, nuevaUnidad[key]);
       }
     }
 
-    // Agregar los PDFs (asegúrate de tener estos estados)
+    // Agregar id_empresa e id_sucursal como números
+    formData.append("empresa", parseInt(nuevaUnidad.id_empresa));
+    formData.append("sucursal", parseInt(nuevaUnidad.sucursal));
+
+    // Archivos opcionales
+    if (fotoUnidad) formData.append("foto_unidad", fotoUnidad);
+    if (pdfFactura) formData.append("pdf_factura", pdfFactura);
+    if (agregarPlacas) {
+    if (nuevaUnidad.placa) formData.append("placa", nuevaUnidad.placa);
+    if (nuevaUnidad.folio) formData.append("folio", nuevaUnidad.folio);
+    if (nuevaUnidad.fecha_expedicion) formData.append("fecha_expedicion", nuevaUnidad.fecha_expedicion);
+    if (nuevaUnidad.fecha_vigencia) formData.append("fecha_vigencia", nuevaUnidad.fecha_vigencia);
     if (pdfFrontal) formData.append("pdf_frontal", pdfFrontal);
     if (pdfTrasero) formData.append("pdf_trasero", pdfTrasero);
+    if (comprobantePago) formData.append("comprobante", comprobantePago);
+    if (tarjetaCirculacion) formData.append("tarjeta_circulacion", tarjetaCirculacion);
 
+    }
+
+    // Enviar a la API
     const response = await fetch(`${API_URL}`, {
       method: "POST",
-      body: formData // sin headers
+      body: formData,
     });
 
-    if (!response.ok) throw new Error("Error al agregar unidad y placa");
+    if (!response.ok) {
+      const errorRes = await response.json();
+      console.error("Error API:", errorRes);
+      throw new Error(errorRes.message || "Error al agregar unidad");
+    }
 
     const data = await response.json();
-    setShowModal(false);
 
+    // Éxito
+    setUnidades(prev => [...prev, data]);
     Swal.fire({
       title: "¡Éxito!",
-      text: "Unidad y placa agregadas correctamente",
+      text: "Unidad agregada correctamente",
       icon: "success",
-      confirmButtonColor: "#28a745"
+      confirmButtonColor: "#28a745",
     });
 
-    setUnidades(prev => [...prev, data]);
-
+    // Limpiar estado
     setNuevaUnidad({
+      id_empresa: "",
+      sucursal: "",
       marca: "",
       vehiculo: "",
       modelo: "",
@@ -269,18 +356,21 @@ const handleAgregarUnidad = async (e) => {
       sim_gps: "",
       uid: "",
       propietario: "",
-      sucursal: "",
       compra_arrendado: "",
       fecha_adquisicion: "",
       folio: "",
       placa: "",
       fecha_expedicion: "",
       fecha_vigencia: "",
+      valor_factura: "",
+      kilometraje_actual: ""
     });
-
-    // Limpiar PDFs seleccionados
+    setFotoUnidad(null);
+    setPdfFactura(null);
     setPdfFrontal(null);
     setPdfTrasero(null);
+    setAgregarPlacas(false);
+    setShowModal(false);
 
   } catch (err) {
     Swal.fire({
@@ -431,500 +521,399 @@ const handleAgregarUnidad = async (e) => {
         {unidadToEdit ? (
           <>
             <h2 style={{ textAlign: 'center' }}>Editar Unidad</h2>
-          <form onSubmit={handleUpdateUnidad} className="form-container">
-          
-          <div className="form-row">
-            <div className="form-group">
-              <label>Marca</label>
-              <input
-                type="text"
-                value={unidadToEdit.marca || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, marca: e.target.value})}
-                required
-              />
-            </div>
 
-            <div className="form-group">
-              <label>Vehículo</label>
-              <input
-                type="text"
-                value={unidadToEdit.vehiculo || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, vehiculo: e.target.value})}
-                required
-              />
-            </div>
-          </div>
-          
-          <div className="form-row">
-            <div className="form-group">
-              <label>Modelo</label>
-              <input
-                type="text"
-                value={unidadToEdit.modelo || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, modelo: e.target.value})}
-                required
-              />
-            </div>
+      <form onSubmit={handleUpdateUnidad} className="form-container">
 
-            <div className="form-group">
-              <label>NIV</label>
-              <input
-                type="text"
-                value={unidadToEdit.niv || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, niv: e.target.value})}
-                required
-              />
-            </div>
-          </div>
+  {/* ----------------------------- */}
+  {/* SELECCIÓN DE EMPRESA Y SUCURSAL */}
+  {/* ----------------------------- */}
+  <h4>Empresa y Sucursal</h4>
+<div className="form-group">
+  <label>Empresa</label>
+  <select
+    value={unidadToEdit.id_empresa || ""}
+    onChange={e => {
+      const empresaId = e.target.value;
+      setUnidadToEdit(prev => ({ ...prev, id_empresa: empresaId, sucursal: "" })); // resetear sucursal
+      setEmpresaSeleccionada(empresaId); // activa filtrado de sucursales
+    }}
+  >
+    <option value="">Seleccione una empresa</option>
+    {empresas.map(e => (
+      <option key={e.id_empresa} value={e.id_empresa}>
+        {e.razon_social}
+      </option>
+    ))}
+  </select>
+</div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label>Fecha Adquisición</label>
-              <input
-                type="date"
-                value={unidadToEdit.fecha_adquisicion || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, fecha_adquisicion: e.target.value})}
-                required
-              />
-            </div>
+<div className="form-group">
+  <label>Sucursal</label>
+  <select
+    value={unidadToEdit.sucursal || ""}
+    onChange={e => setUnidadToEdit(prev => ({ ...prev, sucursal: e.target.value }))}
+    disabled={!empresaSeleccionada} // deshabilitado si no hay empresa seleccionada
+  >
+    <option value="">Seleccione una sucursal</option>
+    {sucursales.map(s => (
+      <option key={s.id_sucursal} value={s.id_sucursal}>
+        {s.nombre}
+      </option>
+    ))}
+  </select>
+</div>
 
-            <div className="form-group">
-              <label>Color</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.color || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, color: e.target.value}})}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>Clase Tipo</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.clase_tipo || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, clase_tipo: e.target.value}})}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Motor</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.motor || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, motor: e.target.value}})}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>Transmisión</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.transmision || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, transmision: e.target.value}})}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Combustible</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.combustible || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, combustible: e.target.value}})}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>Sucursal</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.sucursal || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, sucursal: e.target.value}})}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Compra/Arrendado</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.compra_arrendado || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, compra_arrendado: e.target.value}})}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>Propietario</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.propietario || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, propietario: e.target.value}})}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>UID</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.uid || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, uid: e.target.value}})}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>Teléfono GPS</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.telefono_gps || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, telefono_gps: e.target.value}})}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>SIM GPS</label>
-              <input
-                type="text"
-                value={unidadToEdit.mas_datos?.sim_gps || ""}
-                onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, sim_gps: e.target.value}})}
-                required
-              />
-            </div>
-          </div>
-
-          <button type="submit" className="btn-save">Guardar</button>
-        </form>
-          </>
-        ) : nuevaUnidad ? (
-        <><h2 style={{ textAlign: 'center' }}>Agregar Nueva Unidad con Placa</h2>
-<form onSubmit={handleAgregarUnidad} className="form-container">
-
-  {/* Fila 1: Marca, Vehículo y Modelo */}
-  <div className="form-row" style={{ display: 'flex', gap: '10px' }}>
+  {/* ----------------------------- */}
+  {/* DATOS DEL VEHÍCULO */}
+  {/* ----------------------------- */}
+  <h4>Datos del Vehículo</h4>
+  <div className="form-row">
     <div className="form-group">
       <label>Marca</label>
-      <input
-        type="text"
-        name="marca"
-        placeholder="Ej. Nissan"
-        value={nuevaUnidad.marca || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. Nissan"}
-        required
-      />
+      <input type="text" name="marca" value={unidadToEdit.marca || ""} onChange={e => setUnidadToEdit({...unidadToEdit, marca: e.target.value})} required />
     </div>
     <div className="form-group">
       <label>Vehículo</label>
-      <input
-        type="text"
-        name="vehiculo"
-        placeholder="Ej. Versa"
-        value={nuevaUnidad.vehiculo || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. Versa"}
-        required
-      />
+      <input type="text" name="vehiculo" value={unidadToEdit.vehiculo || ""} onChange={e => setUnidadToEdit({...unidadToEdit, vehiculo: e.target.value})} required />
     </div>
     <div className="form-group">
       <label>Modelo</label>
-      <input
-        type="text"
-        name="modelo"
-        placeholder="Ej. 2022"
-        value={nuevaUnidad.modelo || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. 2022"}
-        required
-      />
+      <input type="number" name="modelo" value={unidadToEdit.modelo || ""} onChange={e => setUnidadToEdit({...unidadToEdit, modelo: e.target.value})} required />
     </div>
   </div>
 
-  {/* Fila 2: Clase Tipo, NIV y Motor */}
-  <div className="form-row" style={{ display: 'flex', gap: '10px' }}>
+  <div className="form-row">
     <div className="form-group">
       <label>Clase Tipo</label>
-      <input
-        type="text"
-        name="clase_tipo"
-        placeholder="Ej. Sedán"
-        value={nuevaUnidad.clase_tipo || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. Sedán"}
-        required
-      />
+      <input type="text" value={unidadToEdit.mas_datos?.clase_tipo || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, clase_tipo: e.target.value}})} />
     </div>
     <div className="form-group">
       <label>NIV</label>
-      <input
-        type="text"
-        name="niv"
-        placeholder="Ej. 1HGCM82633A004352"
-        value={nuevaUnidad.niv || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. 1HGCM82633A004352"}
-        required
-      />
+        <input type="text" value={unidadToEdit.niv || ""} onChange={e => setUnidadToEdit({...unidadToEdit, niv: e.target.value})} />
     </div>
     <div className="form-group">
       <label>Motor</label>
-      <input
-        type="text"
-        name="motor"
-        placeholder="Ej. 1.6L"
-        value={nuevaUnidad.motor || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. 1.6L"}
-        required
-      />
+      <input type="text" value={unidadToEdit.mas_datos?.motor || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, motor: e.target.value}})} />
     </div>
   </div>
 
-  {/* Fila 3: Transmisión, Combustible y Color */}
-      <div className="form-row" style={{ display: 'flex', gap: '10px' }}>
-      <div className="form-group">
-        <label>Transmisión</label>
-        <select
-          name="transmision"
-          value={nuevaUnidad.transmision || ""}
-          onChange={handleChangeNuevaUnidad}
-          required
-        >
-          <option value="">Seleccione tipo</option>
-          <option value="Automática">Automática</option>
-          <option value="Manual">Manual</option>
-          <option value="CVT">CVT</option>
-          <option value="Semi-automática">Semi-automática</option>
-        </select>
-      </div>
-
-      <div className="form-group">
-        <label>Combustible</label>
-        <select
-          name="combustible"
-          value={nuevaUnidad.combustible || ""}
-          onChange={handleChangeNuevaUnidad}
-          required
-        >
-          <option value="">Seleccione tipo</option>
-          <option value="Gasolina">Gasolina</option>
-          <option value="Diésel">Diésel</option>
-          <option value="Eléctrico">Eléctrico</option>
-          <option value="Híbrido">Híbrido</option>
-          <option value="Gas LP">Gas LP</option>
-          <option value="Gas Natural">Gas Natural</option>
-        </select>
-      </div>
-
+  <div className="form-row">
+    <div className="form-group">
+      <label>Transmisión</label>
+      <select value={unidadToEdit.mas_datos?.transmision || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, transmision: e.target.value}})}>
+        <option value="">Seleccione</option>
+        <option value="Automática">Automática</option>
+        <option value="Manual">Manual</option>
+        <option value="CVT">CVT</option>
+      </select>
+    </div>
+    <div className="form-group">
+      <label>Combustible</label>
+      <select value={unidadToEdit.mas_datos?.combustible || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, combustible: e.target.value}})}>
+        <option value="">Seleccione</option>
+        <option value="Gasolina">Gasolina</option>
+        <option value="Diésel">Diésel</option>
+        <option value="Eléctrico">Eléctrico</option>
+        <option value="Híbrido">Híbrido</option>
+      </select>
+    </div>
     <div className="form-group">
       <label>Color</label>
-      <input
-        type="text"
-        name="color"
-        placeholder="Ej. Blanco"
-        value={nuevaUnidad.color || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. Blanco"}
-        required
-      />
+      <input type="text" value={unidadToEdit.mas_datos?.color || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, color: e.target.value}})} />
     </div>
   </div>
 
-  {/* Fila 4: Fecha Adquisición, Propietario y UID */}
-  <div className="form-row" style={{ display: 'flex', gap: '10px' }}>
+  <div className="form-row">
     <div className="form-group">
       <label>Fecha Adquisición</label>
-      <input
-        type="date"
-        name="fecha_adquisicion"
-        value={nuevaUnidad.fecha_adquisicion || ""}
-        onChange={handleChangeNuevaUnidad}
-        required
-      />
+      <input type="date" value={unidadToEdit.fecha_adquisicion || ""} onChange={e => setUnidadToEdit({...unidadToEdit, fecha_adquisicion: e.target.value})} />
     </div>
     <div className="form-group">
       <label>Propietario</label>
-      <input
-        type="text"
-        name="propietario"
-        placeholder="Ej. Juan Pérez"
-        value={nuevaUnidad.propietario || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. Juan Pérez"}
-        required
-      />
+      <input type="text" value={unidadToEdit.mas_datos?.propietario || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, propietario: e.target.value}})} />
     </div>
     <div className="form-group">
-      <label>UID</label>
-      <input
-        type="text"
-        name="uid"
-        placeholder="Ej. UID12345"
-        value={nuevaUnidad.uid || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. UID12345"}
-        required
-      />
+      <label>Compra o Arrendado</label>
+      <input type="text" value={unidadToEdit.mas_datos?.compra_arrendado || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, compra_arrendado: e.target.value}})} />
     </div>
   </div>
 
-  {/* Fila 5: Teléfono GPS, SIM GPS y Sucursal */}
-  <div className="form-row" style={{ display: 'flex', gap: '10px' }}>
+  {/* DOCUMENTOS Y VALORES */}
+  <div className="form-row">
+    <div className="form-group">
+      <label>Foto de la Unidad</label>
+      <input type="file" accept="image/*" onChange={(e) => setFotoUnidad(e.target.files[0])} />
+    </div>
+    <div className="form-group">
+      <label>Factura (PDF)</label>
+      <input type="file" accept="application/pdf" onChange={(e) => setPdfFactura(e.target.files[0])} />
+    </div>
+    <div className="form-group">
+      <label>Valor Factura</label>
+      <input type="number" step="0.01" value={unidadToEdit.valor_factura || ""} onChange={e => setUnidadToEdit({...unidadToEdit, valor_factura: e.target.value})} />
+    </div>
+  </div>
+
+  <div className="form-row">
+    <div className="form-group">
+      <label>Kilometraje actual</label>
+      <input type="number" value={unidadToEdit.kilometraje_actual || ""} onChange={e => setUnidadToEdit({...unidadToEdit, kilometraje_actual: e.target.value})} />
+    </div>
+  </div>
+
+  {/* GPS */}
+  <h4>Datos de Navegación (GPS)</h4>
+  <div className="form-row">
     <div className="form-group">
       <label>Teléfono GPS</label>
-      <input
-        type="text"
-        name="telefono_gps"
-        placeholder="Ej. 5512345678"
-        value={nuevaUnidad.telefono_gps || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. 5512345678"}
-        required
-      />
+      <input type="text" value={unidadToEdit.mas_datos?.telefono_gps || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, telefono_gps: e.target.value}})} />
     </div>
     <div className="form-group">
       <label>SIM GPS</label>
-      <input
-        type="text"
-        name="sim_gps"
-        placeholder="Ej. SIM12345"
-        value={nuevaUnidad.sim_gps || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. SIM12345"}
-        required
-      />
+      <input type="text" value={unidadToEdit.mas_datos?.sim_gps || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, sim_gps: e.target.value}})} />
     </div>
     <div className="form-group">
-      <label>Sucursal</label>
-      <input
-        type="text"
-        name="sucursal"
-        placeholder="Ej. Toluca"
-        value={nuevaUnidad.sucursal || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. Toluca"}
-        required
-      />
+      <label>UID</label>
+      <input type="text" value={unidadToEdit.mas_datos?.uid || ""} onChange={e => setUnidadToEdit({...unidadToEdit, mas_datos: {...unidadToEdit.mas_datos, uid: e.target.value}})} />
     </div>
   </div>
 
-  {/* Fila 6: Compra/Arrendado, Placa y Folio */}
-  <div className="form-row" style={{ display: 'flex', gap: '10px' }}>
+  <button type="submit" className="btn-save">Guardar Cambios</button>
+</form>
+
+
+          </>
+        ) : nuevaUnidad ? (
+        <><h2 style={{ textAlign: 'center' }}>Agregar Nueva Unidad con Placa</h2>
+    {/* =========================
+        FORMULARIO (agregar unidad)
+        ========================= */}
+
+<form onSubmit={handleAgregarUnidad} className="form-container">
+
+  {/* ----------------------------- */}
+  {/* SELECCIÓN DE EMPRESA Y SUCURSAL */}
+  {/* ----------------------------- */}
+  <h4>Empresa y Sucursal</h4>
+  <div className="form-group">
+    <label>Empresa</label>
+    <select
+      value={nuevaUnidad.id_empresa || ""}
+      onChange={e => {
+        const empresaId = e.target.value;
+        setNuevaUnidad(prev => ({ ...prev, id_empresa: empresaId, sucursal: "" }));
+        setEmpresaSeleccionada(empresaId);
+      }}
+    >
+      <option value="">Seleccione una empresa</option>
+      {empresas.map(e => (
+        <option key={e.id_empresa} value={e.id_empresa}>
+          {e.razon_social}
+        </option>
+      ))}
+    </select>
+  </div>
+
+  <div className="form-group">
+    <label>Sucursal</label>
+    <select
+      value={nuevaUnidad.sucursal || ""}
+      onChange={e => setNuevaUnidad(prev => ({ ...prev, sucursal: e.target.value }))}
+      disabled={!empresaSeleccionada}
+    >
+      <option value="">Seleccione una sucursal</option>
+      {sucursales.map(s => (
+        <option key={s.id_sucursal} value={s.id_sucursal}>
+          {s.nombre}
+        </option>
+      ))}
+    </select>
+  </div>
+
+  {/* ----------------------------- */}
+  {/* DATOS DEL VEHÍCULO */}
+  {/* ----------------------------- */}
+  <h4>Datos del Vehículo</h4>
+  <div className="form-row">
     <div className="form-group">
-      <label>Compra/Arrendado</label>
-      <input
-        type="text"
-        name="compra_arrendado"
-        placeholder="Ej. Compra"
-        value={nuevaUnidad.compra_arrendado || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. Compra"}
-        required
-      />
+      <label>Marca</label>
+      <input type="text" name="marca" value={nuevaUnidad.marca || ""} onChange={handleChangeNuevaUnidad} required />
     </div>
     <div className="form-group">
-      <label>Placa</label>
-      <input
-        type="text"
-        name="placa"
-        placeholder="Ej. ABC-123"
-        value={nuevaUnidad.placa || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. ABC-123"}
-        required
-      />
+      <label>Vehículo</label>
+      <input type="text" name="vehiculo" value={nuevaUnidad.vehiculo || ""} onChange={handleChangeNuevaUnidad} required />
     </div>
     <div className="form-group">
-      <label>Folio</label>
-      <input
-        type="text"
-        name="folio"
-        placeholder="Ej. FOLIO123"
-        value={nuevaUnidad.folio || ""}
-        onChange={handleChangeNuevaUnidad}
-        onFocus={(e) => e.target.placeholder = ""}
-        onBlur={(e) => e.target.placeholder = "Ej. FOLIO123"}
-      />
+      <label>Modelo</label>
+      <input type="number" name="modelo" value={nuevaUnidad.modelo || ""} onChange={handleChangeNuevaUnidad} required />
     </div>
   </div>
 
-  {/* Fila 7: Fecha Expedición, Fecha Vigencia y PDF Frontal */}
-  <div className="form-row" style={{ display: 'flex', gap: '10px' }}>
+  <div className="form-row">
     <div className="form-group">
-      <label>Fecha Expedición</label>
-      <input
-        type="date"
-        name="fecha_expedicion"
-        value={nuevaUnidad.fecha_expedicion || ""}
-        onChange={handleChangeNuevaUnidad}
-      />
+      <label>Clase Tipo</label>
+      <input type="text" name="clase_tipo" value={nuevaUnidad.clase_tipo || ""} onChange={handleChangeNuevaUnidad} />
     </div>
     <div className="form-group">
-      <label>Fecha Vigencia</label>
-      <input
-        type="date"
-        name="fecha_vigencia"
-        value={nuevaUnidad.fecha_vigencia || ""}
-        onChange={handleChangeNuevaUnidad}
-      />
+      <label>NIV</label>
+      <input type="text" name="niv" value={nuevaUnidad.niv || ""} onChange={handleChangeNuevaUnidad} />
     </div>
     <div className="form-group">
-      <label>PDF Placa Frontal</label>
-      <input
-        type="file"
-        accept="application/pdf"
-        onChange={(e) => setPdfFrontal(e.target.files[0])}
-        required
-      />
+      <label>Motor</label>
+      <input type="text" name="motor" value={nuevaUnidad.motor || ""} onChange={handleChangeNuevaUnidad} />
     </div>
   </div>
 
-  {/* Fila 8: PDF Placa Trasera */}
-  <div className="form-row" style={{ display: 'flex', gap: '10px' }}>
+  <div className="form-row">
     <div className="form-group">
-      <label>PDF Placa Trasera</label>
-      <input
-        type="file"
-        accept="application/pdf"
-        onChange={(e) => setPdfTrasero(e.target.files[0])}
-        required
-      />
+      <label>Transmisión</label>
+      <select name="transmision" value={nuevaUnidad.transmision || ""} onChange={handleChangeNuevaUnidad}>
+        <option value="">Seleccione</option>
+        <option value="Automática">Automática</option>
+        <option value="Manual">Manual</option>
+        <option value="CVT">CVT</option>
+      </select>
+    </div>
+    <div className="form-group">
+      <label>Combustible</label>
+      <select name="combustible" value={nuevaUnidad.combustible || ""} onChange={handleChangeNuevaUnidad}>
+        <option value="">Seleccione</option>
+        <option value="Gasolina">Gasolina</option>
+        <option value="Diésel">Diésel</option>
+        <option value="Eléctrico">Eléctrico</option>
+        <option value="Híbrido">Híbrido</option>
+      </select>
+    </div>
+    <div className="form-group">
+      <label>Color</label>
+      <input type="text" name="color" value={nuevaUnidad.color || ""} onChange={handleChangeNuevaUnidad} />
     </div>
   </div>
+
+  <div className="form-row">
+    <div className="form-group">
+      <label>Fecha Adquisición</label>
+      <input type="date" name="fecha_adquisicion" value={nuevaUnidad.fecha_adquisicion || ""} onChange={handleChangeNuevaUnidad} />
+    </div>
+    <div className="form-group">
+      <label>Propietario</label>
+      <input type="text" name="propietario" value={nuevaUnidad.propietario || ""} onChange={handleChangeNuevaUnidad} />
+    </div>
+    <div className="form-group">
+      <label>Compra o Arrendado</label>
+      <input type="text" name="compra_arrendado" value={nuevaUnidad.compra_arrendado || ""} onChange={handleChangeNuevaUnidad} />
+    </div>
+  </div>
+
+  {/* DOCUMENTOS Y VALORES */}
+  <div className="form-row">
+    <div className="form-group">
+      <label>Foto de la Unidad</label>
+      <input type="file" accept="image/*" onChange={(e) => setFotoUnidad(e.target.files[0])} />
+    </div>
+    <div className="form-group">
+      <label>Factura (PDF)</label>
+      <input type="file" accept="application/pdf" onChange={(e) => setPdfFactura(e.target.files[0])} />
+    </div>
+    <div className="form-group">
+      <label>Valor Factura</label>
+      <input type="number" step="0.01" name="valor_factura" value={nuevaUnidad.valor_factura || ""} onChange={handleChangeNuevaUnidad} />
+    </div>
+  </div>
+
+  <div className="form-row">
+    <div className="form-group">
+      <label>Kilometraje actual</label>
+      <input type="number" name="kilometraje_actual" value={nuevaUnidad.kilometraje_actual || ""} onChange={handleChangeNuevaUnidad} />
+    </div>
+  </div>
+
+  {/* GPS */}
+  <h4>Datos de Navegación (GPS)</h4>
+  <div className="form-row">
+    <div className="form-group">
+      <label>Teléfono GPS</label>
+      <input type="text" name="telefono_gps" value={nuevaUnidad.telefono_gps || ""} onChange={handleChangeNuevaUnidad} />
+    </div>
+    <div className="form-group">
+      <label>SIM GPS</label>
+      <input type="text" name="sim_gps" value={nuevaUnidad.sim_gps || ""} onChange={handleChangeNuevaUnidad} />
+    </div>
+    <div className="form-group">
+      <label>UID</label>
+      <input type="text" name="uid" value={nuevaUnidad.uid || ""} onChange={handleChangeNuevaUnidad} />
+    </div>
+  </div>
+
+  {/* PLACAS (opcional) */}
+  <h3>Placas (Opcional)</h3>
+  <div className="form-group">
+    <label>
+      <input type="checkbox" checked={agregarPlacas} onChange={() => setAgregarPlacas(!agregarPlacas)} />
+      &nbsp;Agregar placas
+    </label>
+  </div>
+
+  {agregarPlacas && (
+    <>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Placa</label>
+          <input type="text" name="placa" value={nuevaUnidad.placa || ""} onChange={handleChangeNuevaUnidad} />
+        </div>
+        <div className="form-group">
+          <label>Folio de la tarjeta de circulación</label>
+          <input type="text" name="folio" value={nuevaUnidad.folio || ""} onChange={handleChangeNuevaUnidad} />
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>Fecha Expedición</label>
+          <input type="date" name="fecha_expedicion" value={nuevaUnidad.fecha_expedicion || ""} onChange={handleChangeNuevaUnidad} />
+        </div>
+        <div className="form-group">
+          <label>Fecha Vigencia</label>
+          <input type="date" name="fecha_vigencia" value={nuevaUnidad.fecha_vigencia || ""} onChange={handleChangeNuevaUnidad} />
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>Monto Pago de las placas</label>
+          <input type="number" name="monto_pago" value={nuevaUnidad.monto_pago || ""} onChange={handleChangeNuevaUnidad} />
+        </div>
+         <div className="form-group">
+          <label>Comprobante del Pago (PDF)</label>
+          <input type="file" accept="application/pdf" onChange={(e) => setComprobantePago(e.target.files[0])} />
+        </div>
+        <div className="form-group">
+          <label>PDF Placa Frontal</label>
+          <input type="file" accept="application/pdf" onChange={(e) => setPdfFrontal(e.target.files[0])} />
+        </div>
+      </div>
+
+      <div className="form-row">
+        
+        <div className="form-group">
+          <label>PDF Placa Trasera</label>
+          <input type="file" accept="application/pdf" onChange={(e) => setPdfTrasero(e.target.files[0])} />
+        </div>
+       
+        <div className="form-group">
+          <label>Tarjeta de Circulación (PDF)</label>
+          <input type="file" accept="application/pdf" onChange={(e) => setTarjetaCirculacion(e.target.files[0])} />
+        </div>
+      </div>
+    </>
+  )}
 
   <button type="submit" className="btn-save">Agregar Unidad</button>
-</form>           
-                  
+</form>
+
+
+
+       
           
         </>
       ) :(

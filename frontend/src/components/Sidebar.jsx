@@ -13,6 +13,8 @@ const Sidebar = () => {
   const [showChoferSubmenu, setShowChoferSubmenu] = useState(false);
   const navigate = useNavigate();
   const { pendientes } = useContext(NotificationContext);
+  const { alertasPendientes } = useContext(NotificationContext);
+  const { mensajesNuevos } = useContext(NotificationContext);
 
   const [rol, setRol] = useState(null);
 
@@ -82,32 +84,42 @@ const Sidebar = () => {
               <NavLink to="/unidades" className={({ isActive }) => (isActive ? "active" : "")}>
                 <i className="fa fa-car"></i> Unidades
               </NavLink>
-              <NavLink to="/usuarios" className={({ isActive }) => (isActive ? "active" : "")}>
-                <i className="fa fa-users"></i> Usuarios
-              </NavLink>
-              <NavLink to="/garantias" className={({ isActive }) => (isActive ? "active" : "")}>
-                <i className="fa-solid fa-file-lines"></i> Pólizas
-              </NavLink>
-              <NavLink to="/verificaciones" className={({ isActive }) => (isActive ? "active" : "")}>
-                <i className="fa-solid fa-clipboard-check"></i> Verificaciones
-              </NavLink>
               <NavLink to="/placas" className={({ isActive }) => (isActive ? "active" : "")}>
                 <i className="fa-solid fa-clipboard-check"></i> Placas
               </NavLink>
               <NavLink to="/registropago" className={({ isActive }) => (isActive ? "active" : "")}>
                 <i className="fa-solid fa-clipboard-check"></i> Tenencia y Refrendo
               </NavLink>
-              <NavLink to="/Asignaciones" className={({ isActive }) => (isActive ? "active" : "")}>
+                <NavLink to="/Asignaciones" className={({ isActive }) => (isActive ? "active" : "")}>
                 <i className="fa-solid fa-clipboard-check"></i> Asignaciones
               </NavLink>
+              
+              <NavLink to="/garantias" className={({ isActive }) => (isActive ? "active" : "")}>
+                <i className="fa-solid fa-file-lines"></i> Pólizas
+              </NavLink>
+              <NavLink to="/verificaciones" className={({ isActive }) => (isActive ? "active" : "")}>
+                <i className="fa-solid fa-clipboard-check"></i> Verificaciones
+              </NavLink>
+              
+
               <NavLink to="/Calendario" className={({ isActive }) => (isActive ? "active" : "")}>
                 <i className="fa-solid fa-clipboard-check"></i> Calendario
               </NavLink>
+              <NavLink to="/usuarios" className={({ isActive }) => (isActive ? "active" : "")}>
+                <i className="fa fa-users"></i> Usuarios
+              </NavLink>
+              <NavLink to="/Empresas" className={({ isActive }) => (isActive ? "active" : "")}>
+                      <i className="fa fa-file-text"></i> Empresa
+              </NavLink>
+              <NavLink to="/Sucursales" className={({ isActive }) => (isActive ? "active" : "")}>
+                      <i className="fa fa-file-text"></i> Sucursales
+              </NavLink>
+
 
               {/* === Mantenimientos === */}
               <div className="menu-item">
                 <NavLink
-                  to="/mantenimientos"
+                  to="#"
                   className={({ isActive }) => (isActive ? "active" : "")}
                   onClick={() => toggleSubmenu(showMantenimientosSubmenu, setShowMantenimientosSubmenu)}
                 >
@@ -119,21 +131,17 @@ const Sidebar = () => {
                 </NavLink>
                 {showMantenimientosSubmenu && (
                   <div className="submenu">
-                    <NavLink to="/tipos_mantenimientos" className={({ isActive }) => (isActive ? "active" : "")}>
-                      <i className="fa fa-wrench"></i> Tipos de mantenimientos
-                    </NavLink>
+                    
                     <NavLink to="/mantenimientos_programado" className={({ isActive }) => (isActive ? "active" : "")}>
-                      <i className="fa fa-gear"></i> Mantenimientos programados
+                      <i className="fa fa-gear"></i> Mantenimientos menores progremados
+                    </NavLink>
+                    <NavLink to="/mayores" className={({ isActive }) => (isActive ? "active" : "")}>
+                      <i className="fa fa-gear"></i> Mantenimientos mayores progremados
                     </NavLink>
                     <NavLink to="/fallasmecanicas" className={({ isActive }) => (isActive ? "active" : "")}>
                       <i className="fa fa-car"></i> Fallas Mecánicas
                     </NavLink>
-                    <NavLink to="/historial_mantenimientos" className={({ isActive }) => (isActive ? "active" : "")}>
-                      <i className="fa fa-history"></i> Historial
-                    </NavLink>
-                    <NavLink to="/frecuencia_mantenimiento" className={({ isActive }) => (isActive ? "active" : "")}>
-                      <i className="fa fa-history"></i> Frecuencia por marca
-                    </NavLink>
+                    
                   </div>
                 )}
               </div>
@@ -141,7 +149,7 @@ const Sidebar = () => {
               {/* === Historiales === */}
               <div className="menu-item">
                 <NavLink
-                  to="/historiales"
+                  to="#"
                   className={({ isActive }) => (isActive ? "active" : "")}
                   onClick={() => toggleSubmenu(showHistorialSubmenu, setShowHistorialSubmenu)}
                 >
@@ -159,10 +167,10 @@ const Sidebar = () => {
                     <NavLink to="/fallasmecanicas" className={({ isActive }) => (isActive ? "active" : "")}>
                       <i className="fa fa-cogs"></i> Fallas Mecánicas
                     </NavLink>
-                    <NavLink to="/mantenimientos" className={({ isActive }) => (isActive ? "active" : "")}>
+                    <NavLink to="/Mantenimientos_realizados" className={({ isActive }) => (isActive ? "active" : "")}>
                       <i className="fa fa-wrench"></i> Mantenimientos
                     </NavLink>
-                    <NavLink to="/polizas" className={({ isActive }) => (isActive ? "active" : "")}>
+                    <NavLink to="/HistorialGarantias" className={({ isActive }) => (isActive ? "active" : "")}>
                       <i className="fa fa-file-text"></i> Pólizas
                     </NavLink>
                     <NavLink to="/historialplacas" className={({ isActive }) => (isActive ? "active" : "")}>
@@ -171,6 +179,10 @@ const Sidebar = () => {
                     <NavLink to="/historialrefrendo" className={({ isActive }) => (isActive ? "active" : "")}>
                       <i className="fa fa-file-text"></i> Refrendo y Tenencia
                     </NavLink>
+                    <NavLink to="/Historialasignaciones" className={({ isActive }) => (isActive ? "active" : "")}>
+                      <i className="fa fa-file-text"></i> Asignaciones
+                    </NavLink>
+                                       
                   </div>
                 )}
               </div>
@@ -181,7 +193,7 @@ const Sidebar = () => {
           {(rol === "chofer" || rol === "admin" || rol === "usuario") && (
             <div className="menu-item">
              <NavLink
-              to="/chofer"
+              to="/Datoschfer"
               end
               className={({ isActive }) => (isActive ? "active" : "")}
               onClick={() => toggleSubmenu(showChoferSubmenu, setShowChoferSubmenu)}
@@ -191,6 +203,8 @@ const Sidebar = () => {
                 className={`fa submenu-toggle fa-chevron-${showChoferSubmenu ? "down" : "right"}`}
                 style={{ marginLeft: "auto" }}
               ></i>
+              {mensajesNuevos > 0 && <span className="notification-badge">{mensajesNuevos}</span>}
+
             </NavLink>
 
               {showChoferSubmenu && (
@@ -198,14 +212,52 @@ const Sidebar = () => {
                   <NavLink to="/chofer/solicitudes" className={({ isActive }) => (isActive ? "active" : "")}>
                     <i className="fa fa-users"></i> Solicitud
                   </NavLink>
-                  <NavLink to="/chofer/listasolicitudes" className={({ isActive }) => (isActive ? "active" : "")}>
-                    <i className="fa fa-cogs"></i> Lista Solicitudes
+                  <NavLink to="Solicitudespendiente" className={({ isActive }) => (isActive ? "active" : "")}>
+                    <i className="fa fa-cogs"></i> Solicitudes realizadas
                   </NavLink>
+                  <NavLink to="/chat_chofer" className={({ isActive }) => (isActive ? "active" : "")}>
+                    <i className="fa fa-cogs"></i> Chats
+                    {mensajesNuevos > 0 && <span className="notification-badge">{mensajesNuevos}</span>}
+
+                  </NavLink>
+
                 </div>
               )}
               <NavLink to="/botones" className={({ isActive }) => (isActive ? "active" : "")}>
                 <i className="fa-solid fa-clipboard-check"></i> Pruebas
               </NavLink>
+            
+
+            </div>
+          )}
+          {/* === Acciones Chofer (admin también puede ver) === */}
+          {(rol === "admin" || rol === "usuario") && (
+            <div className="menu-item">
+             <NavLink
+              to="#"
+              end
+              className={({ isActive }) => (isActive ? "active" : "")}
+              onClick={() => toggleSubmenu(showChoferSubmenu, setShowChoferSubmenu)}
+            >
+              <i className="fa fa-folder-open"></i> Panel de configuracion
+              <i
+                className={`fa submenu-toggle fa-chevron-${showChoferSubmenu ? "down" : "right"}`}
+                style={{ marginLeft: "auto" }}
+              ></i>
+
+            </NavLink>
+
+              {showChoferSubmenu && (
+                <div className="submenu">
+                  <NavLink to="/tipos_mantenimientos" className={({ isActive }) => (isActive ? "active" : "")}>
+                      <i className="fa fa-wrench"></i> Tipos de mantenimientos
+                    </NavLink>
+                    <NavLink to="/frecuencia_mantenimiento" className={({ isActive }) => (isActive ? "active" : "")}>
+                      <i className="fa fa-history"></i> Frecuencia por marca
+                    </NavLink>
+
+                </div>
+              )}
             </div>
           )}
         </nav>

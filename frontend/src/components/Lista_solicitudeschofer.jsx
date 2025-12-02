@@ -1,136 +1,132 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { API_URL } from "../config"; // Ajusta la ruta según la ubicación del archivo
-import "./SolicitudForm"; // Asegúrate de tener los estilos CSS aquí
+import Swal from "sweetalert2";
+import { API_URL } from "../config";
+import "./MensajesChofer.css";
 
-export default function ListaSolicitudesChofer() {
-  const [solicitudes, setSolicitudes] = useState([]);
+export default function MensajesChoferChat() {
+  const [conversaciones, setConversaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const navigate = useNavigate();
-
-
-  const idChofer = localStorage.getItem("usuarioId");
-
-  // Paginación
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(5);
-  const itemsPerPageOptions = [5, 10, 15, 20];
+  const [respuestas, setRespuestas] = useState({});
+  const [archivos, setArchivos] = useState({});
 
   useEffect(() => {
-    if (!idChofer) {
-      setError("No se pudo identificar al usuario logueado.");
+    fetchConversaciones();
+  }, []);
+
+  const fetchConversaciones = async () => {
+    const idChofer = localStorage.getItem("usuarioId");
+    const rol = localStorage.getItem("rol");
+
+    if (!idChofer || rol !== "chofer") {
+      setError("No tienes permisos para ver estos mensajes");
       setLoading(false);
       return;
     }
 
-    const fetchSolicitudes = async () => {
-      try {
-        const res = await fetch(`${API_URL}/solicitudes/chofer/${idChofer}`);
-        if (!res.ok) throw new Error("Error al cargar solicitudes");
-        const data = await res.json();
-        setSolicitudes(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
+    try {
+      const res = await fetch(`${API_URL}/mis_mensajes/${idChofer}`);
+      if (!res.ok) throw new Error("Error al cargar mensajes");
+      const data = await res.json();
 
-    fetchSolicitudes();
-  }, [idChofer]);
-
-  if (loading) return <p>Cargando solicitudes...</p>;
-  if (error) return <p>Error: {error}</p>;
-  if (solicitudes.length === 0) return <p>No tienes solicitudes.</p>;
-
-  // Paginación lógica
-  const totalPages = Math.ceil(solicitudes.length / itemsPerPage);
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = solicitudes.slice(indexOfFirstItem, indexOfLastItem);
-
-  const handleContinuar = (id) => {
-    console.log("Continuar con solicitud:", id);
-    // Aquí puedes abrir el formulario paso 2
+      // Solo solicitudes rechazadas
+      const rechazadas = data.filter(s => s.estado === "rechazada" || s.estado === "pendiente");
+      setConversaciones(rechazadas);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const handleResponder = async (id_solicitud) => {
+    const mensaje = respuestas[id_solicitud]?.trim();
+    const archivo = archivos[id_solicitud];
+
+    if (!mensaje && !archivo) {
+      Swal.fire("Error", "Escribe un mensaje o sube un archivo antes de responder", "warning");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("id_solicitud", id_solicitud);
+    formData.append("id_usuario", localStorage.getItem("usuarioId"));
+    if (mensaje) formData.append("mensaje", mensaje);
+    if (archivo) formData.append("archivo", archivo);
+
+    try {
+      const res = await fetch(`${API_URL}/solicitudes_mensajes/responder`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.msg || "Error al enviar respuesta");
+
+      Swal.fire("Éxito", "Respuesta enviada", "success");
+      setRespuestas(prev => ({ ...prev, [id_solicitud]: "" }));
+      setArchivos(prev => ({ ...prev, [id_solicitud]: null }));
+      fetchConversaciones();
+    } catch (err) {
+      Swal.fire("Error", err.message || "No se pudo enviar respuesta", "error");
+    }
+  };
+
+  if (loading) return <p>Cargando mensajes...</p>;
+  if (error) return <p>Error: {error}</p>;
+  if (conversaciones.length === 0) return <p>No hay mensajes rechazados</p>;
+
   return (
-    <div className="unidades-container">
-      <h1><i className="fa-solid fa-car-side"></i> Mis Solicitudes</h1>
-
-      <div className="pagination-controls">
-        <label className='pagination-label'>
-          Mostrar:
-          <select className="pagination-select"
-            value={itemsPerPage}
-            onChange={e => {
-              setItemsPerPage(Number(e.target.value));
-              setCurrentPage(1);
-            }}
-          >
-            {itemsPerPageOptions.map(opt => (
-              <option key={opt} value={opt}>{opt}</option>
+    <div className="chat-container">
+      <h1>Mensajes de Solicitudes Rechazadas</h1>
+      {conversaciones.map((solicitud) => (
+        <div key={solicitud.id_solicitud} className="chat-solicitud">
+          <h2>Solicitud #{solicitud.id_solicitud} - {solicitud.tipo_servicio}</h2>
+          <div className="chat-mensajes">
+            {solicitud.mensajes.map((m) => (
+              <div
+                key={m.id_mensaje}
+                className={`chat-bubble ${m.quien === "admin" ? "admin" : "chofer"}`}
+              >
+                {m.archivo_adjunto && (
+                  <img
+                    src={`${API_URL}/uploads/mensajes/${m.archivo_adjunto}`}
+                    alt="Evidencia"
+                    className="chat-image"
+                  />
+                )}
+                {m.mensaje && <p>{m.mensaje}</p>}
+                <span className="chat-date">{new Date(m.fecha).toLocaleString()}</span>
+              </div>
             ))}
-          </select>
-        </label>
+          </div>
 
-        <button 
-        className="btn-open-modal btn-registrar-garantia"
-        onClick={() => navigate("/chofer/solicitudes")}
-        >
-        Ir a Solicitud
-        </button>
-      </div>
-
-      <div className="table-wrapper">
-        <table className="elegant-table">
-          <thead>
-            <tr>
-              <th>Unidad</th>
-              <th>Pieza</th>
-              <th>Estado</th>
-              <th>Completada</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {currentItems.map((s) => (
-              <tr key={s.id_solicitud}>
-                <td>{s.unidad}</td>
-                <td>{s.pieza}</td>
-                <td>{s.estado}</td>
-                <td>{s.completada ? "Sí" : "No"}</td>
-                <td>
-                  {s.estado === "aprobada" && !s.completada && (
-                    <button className="submit-btn" onClick={() => handleContinuar(s.id_solicitud)}>
-                      Continuar
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {totalPages > 1 && (
-        <div className="pagination">
-          <button 
-            onClick={() => setCurrentPage(p => Math.max(p - 1, 1))} 
-            disabled={currentPage === 1}
-          >
-            <i className="fa-solid fa-arrow-left"></i>
-          </button>
-          <span>Página {currentPage} de {totalPages}</span>
-          <button 
-            onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))} 
-            disabled={currentPage === totalPages}
-          >
-            <i className="fa-solid fa-arrow-right"></i>
-          </button>
+          {/* Formulario de respuesta siempre disponible */}
+          <div className="respuesta-form">
+            <textarea
+              placeholder="Escribe tu respuesta..."
+              value={respuestas[solicitud.id_solicitud] || ""}
+              onChange={e =>
+                setRespuestas(prev => ({ ...prev, [solicitud.id_solicitud]: e.target.value }))
+              }
+              rows={2}
+              className="chat-textarea"
+            />
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e =>
+                setArchivos(prev => ({ ...prev, [solicitud.id_solicitud]: e.target.files[0] }))
+              }
+            />
+            <button
+              className="chat-button"
+              onClick={() => handleResponder(solicitud.id_solicitud)}
+            >
+              Enviar
+            </button>
+          </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }

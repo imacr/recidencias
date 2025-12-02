@@ -35,8 +35,7 @@ export default function Historiales() {
               <th>Monto Refrendo</th>
               <th>Monto Tenencia</th>
               <th>Fecha de Pago</th>
-              <th>Factura Refrendo</th>
-              <th>Factura Tenencia</th>
+              <th>Factura</th>{/* <-- Solo una */}
               <th>Observaciones</th>
               <th>Tipo Movimiento</th>
               <th>Usuario</th>
@@ -56,27 +55,17 @@ export default function Historiales() {
                 <td>{h.monto_tenencia}</td>
                 <td>{h.fecha_pago}</td>
 
+                {/* -------------------------- */}
+                {/* Solo un archivo para mostrar */}
+                {/* -------------------------- */}
                 <td>
-                  {h.url_factura_refrendo ? (
+                  {h.url_factura ? (
                     <button
-                      onClick={() => abrirModal(h.url_factura_refrendo)}
+                      onClick={() => abrirModal(h.url_factura)}
                       className="btn btn-outline-danger btn-sm"
-                      title="Ver factura refrendo"
-                    >Pdf refrendo
-                    </button>
-                  ) : (
-                    "-"
-                  )}
-                </td>
-
-                <td>
-                  {h.url_factura_tenencia ? (
-                    <button
-                      onClick={() => abrirModal(h.url_factura_tenencia)}
-                      className="btn btn-outline-danger btn-sm"
-                      title="Ver factura tenencia"
-                    >Pdf tenencia
-                     
+                      title="Ver factura"
+                    >
+                      Abrir PDF
                     </button>
                   ) : (
                     "-"

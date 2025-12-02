@@ -76,6 +76,77 @@
   color: white;
 }
 
+/* Botón de alertas */
+.alert-button {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 22px;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Badge redondo de notificaciones */
+.notification-badge-header {
+  position: absolute;
+  top: -6px;    /* lo sube */
+  right: -4px;  /* lo mueve hacia la derecha */
+  background: #ff1744;
+  color: white;
+  padding: 2px 6px;
+  min-width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 11px;
+  font-weight: bold;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(0,0,0,0.6);
+}
+
+/* Dropdown de notificaciones */
+.notifications-dropdown {
+  position: absolute;
+  right: 60px;
+  top: 50px;
+  background: #111;
+  color: white;
+  width: 260px;
+  max-height: 350px;
+  padding: 10px;
+  overflow-y: auto;
+  border: 1px solid #e53935;
+  border-radius: 8px;
+  z-index: 999;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+/* Título */
+.notifications-dropdown h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  border-bottom: 1px solid #333;
+  padding-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Ítem individual */
+.notification-item {
+  padding: 8px;
+  border-bottom: 1px solid #333;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.notification-item:hover {
+  background: #e53935;
+}
+
 /* Responsivo: ocultar botón principal en móviles */
 @media (max-width: 767px) {
   .main-action-btn {

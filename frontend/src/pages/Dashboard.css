@@ -1,26 +1,221 @@
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr); /* máximo 2 columnas */
-  gap: 2rem;
-  padding: 1rem;
+/* ================================== */
+/* Dashboard Unidades - Estilo Elegante */
+/* ================================== */
+
+/* Contenedor general */
+.dashboard-container {
+  padding: 25px;
+  background: linear-gradient(135deg, #ffffff, #ccc5c5);
+  color: #f8f9fa;
+  font-family: "Poppins", sans-serif;
+  min-height: 100vh;
 }
 
-/* Contenedor de cada chart */
-.chart-wrapper {
+/* Título principal */
+.dashboard-container .dashboard-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 40px;
+  color: #da1212;
+  text-shadow: 1px 1px 5px #000;
+}
+
+/* -------------------- */
+/* Totales Globales */
+/* -------------------- */
+.dashboard-container .totales-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+}
+
+.dashboard-container .total-card {
+  flex: 1 1 180px;
+  padding: 25px 15px;
+  border-radius: 15px;
+  text-align: center;
+  background-color: #222;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
+  color: #f8f9fa;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-container .total-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
-  height: 100%;
-  min-height: 250px;
+  height: 5px;
+  background: linear-gradient(to right, #ff3c3c, #ff9f1c);
 }
 
-/* Canvas del chart ocupa todo el contenedor */
-.chart-wrapper canvas {
+.dashboard-container .total-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.8);
+}
+
+.dashboard-container .total-card h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+}
+
+.dashboard-container .total-card p {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.dashboard-container .total-unidades::before { background: #06d6a0; }   /* verde */
+.dashboard-container .total-polizas::before { background: #e63946; }    /* rojo */
+.dashboard-container .total-ver-activa::before { background: #1b9aaa; } /* azul */
+.dashboard-container .total-ver-vencida::before { background: #f94144; }/* rojo oscuro */
+.dashboard-container .total-sin-ver::before { background: #adb5bd; }    /* gris */
+
+/* -------------------- */
+/* Gráficas */
+/* -------------------- */
+.dashboard-container .graficas-row {
+  display: flex;
+  gap: 25px;
+  flex-wrap: wrap;
+  margin-top: 50px;
+  justify-content: center;
+}
+
+.dashboard-container .grafica-card {
+  flex: 1 1 420px;
+  background-color: #1f1f1f;
+  border-radius: 15px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.dashboard-container .grafica-wrapper {
+  position: relative;
+  width: 100%;
+  height: 320px;
+}
+
+.dashboard-container .grafica-card canvas {
   width: 100% !important;
   height: 100% !important;
 }
 
-/* Pantallas medianas o pequeñas: solo 1 columna */
-@media (max-width: 968px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
+/* -------------------- */
+/* Sección Sucursales */
+/* -------------------- */
+.dashboard-container .section-title {
+  margin-top: 60px;
+  font-size: 1.8rem;
+  font-weight: 700;
+  text-align: center;
+  color: #5c6063;
+}
+
+.dashboard-container .sucursales-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  margin-top: 25px;
+}
+
+.dashboard-container .sucursal-card {
+  flex: 1 1 220px;
+  background: #222;
+  border-radius: 12px;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.6);
+  padding: 18px;
+  text-align: center;
+  transition: transform 0.3s ease;
+}
+
+.dashboard-container .sucursal-card:hover {
+  transform: translateY(-5px);
+}
+
+.dashboard-container .estado-atrasada { color: #e63946; font-weight: 700; }
+.dashboard-container .estado-en-tiempo { color: #06d6a0; font-weight: 700; }
+.dashboard-container .estado-pendiente { color: #ffb703; font-weight: 700; }
+.dashboard-container .estado-otro { color: #adb5bd; font-weight: 700; }
+
+/* -------------------- */
+/* Unidades sin Póliza */
+/* -------------------- */
+.dashboard-container .sin-poliza-section {
+  margin-top: 60px;
+}
+
+.dashboard-container .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+}
+
+.dashboard-container .btn-toggle {
+  background: linear-gradient(135deg, #e63946, #d90429);
+  color: #fff;
+  border: none;
+  padding: 7px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.dashboard-container .btn-toggle:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 15px rgba(0,0,0,0.7);
+}
+
+/* -------------------- */
+/* Tabla */
+.dashboard-container .table-wrapper {
+  overflow-x: auto;
+  border-radius: 12px;
+}
+
+.dashboard-container .table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #1f1f1f;
+}
+
+.dashboard-container .table-wrapper th,
+.dashboard-container .table-wrapper td {
+  padding: 12px;
+  text-align: center;
+  color: #f8f9fa;
+  border-bottom: 1px solid #333;
+}
+
+.dashboard-container .table-wrapper thead {
+  background-color: #2c2c2c;
+}
+
+.dashboard-container .table-wrapper tbody tr:hover {
+  background-color: #333;
+}
+
+/* -------------------- */
+/* Responsividad */
+@media (max-width: 768px) {
+  .dashboard-container .totales-row,
+  .dashboard-container .graficas-row,
+  .dashboard-container .sucursales-row {
+    flex-direction: column;
+    gap: 20px;
   }
 }
+
+

@@ -34,7 +34,8 @@ CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://local
 
 # Configuración segura usando variables de entorno
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'una-clave-secreta-para-desarrollo')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:admin@localhost/control_vehicular1')
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://localhost:5173"}})
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:admin@localhost/control_vehicular_unificada')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Configuración de Flask-Mail para enviar correos con Gmail
@@ -65,6 +66,7 @@ class Usuarios(db.Model):
     fecha_ultimo_login = db.Column(db.DateTime, nullable=True)
     estado = db.Column(db.Enum('activo','inactivo'), default='activo')
     token_recuperacion = db.Column(db.String(255), nullable=True)
+    token_expiracion = db.Column(db.DateTime, nullable=True)  # <-- Agrega esta línea
 
     id_chofer = db.Column(db.Integer, db.ForeignKey('choferes.id_chofer'), nullable=True)
 
@@ -105,7 +107,7 @@ class Choferes(db.Model):
             "licencia_vigencia": str(self.licencia_vigencia) if self.licencia_vigencia else None
         }
 
-    
+
 class Unidades(db.Model):
     __tablename__ = "Unidades"
     id_unidad = db.Column(db.Integer, primary_key=True)
@@ -113,7 +115,7 @@ class Unidades(db.Model):
     vehiculo = db.Column(db.String(100))
     modelo = db.Column(db.Integer)
     clase_tipo = db.Column(db.String(50))
-    niv = db.Column(db.String(50), unique=True)
+    niv = db.Column(db.String(50))
     motor = db.Column(db.String(50))
     transmision = db.Column(db.String(50))
     combustible = db.Column(db.String(50))
@@ -122,12 +124,18 @@ class Unidades(db.Model):
     sim_gps = db.Column(db.String(20))
     uid = db.Column(db.String(50))
     propietario = db.Column(db.String(255))
-    sucursal = db.Column(db.String(100))
+    id_empresa = db.Column(db.Integer, db.ForeignKey("empresa.id_empresa"), nullable=False)  # <-- empresa
+    sucursal = db.Column(db.Integer, db.ForeignKey("sucursales.id_sucursal"))  # <-- sucursal
     compra_arrendado = db.Column(db.String(20))
     fecha_adquisicion = db.Column(db.Date)
-    kilometraje_actual = db.Column(db.Integer)  # <-- esta línea es crucial
+    valor_factura = db.Column(db.Numeric(12,2))
+    url_factura = db.Column(db.String(255))
+    kilometraje_actual = db.Column(db.Integer)
+    url_foto = db.Column(db.String(255))  # <-- campo agregado
 
-    placa = db.relationship('Placas', uselist=False, backref='unidad')  # one-to-one
+    placa = db.relationship('Placas', uselist=False, backref='unidad')
+    empresa = db.relationship("Empresa", backref="unidades")
+    sucursal_rel = db.relationship("Sucursal", backref="unidades")
 
     def to_dict(self):
         return {
@@ -145,17 +153,22 @@ class Unidades(db.Model):
             'sim_gps': self.sim_gps,
             'uid': self.uid,
             'propietario': self.propietario,
+            'id_empresa': self.id_empresa,
             'sucursal': self.sucursal,
             'compra_arrendado': self.compra_arrendado,
             'fecha_adquisicion': str(self.fecha_adquisicion) if self.fecha_adquisicion else None,
-            'kilometraje_actual': self.kilometraje_actual,  # <-- agregado
-            'placa': self.placa.to_dict() if self.placa else None
+            'valor_factura': float(self.valor_factura) if self.valor_factura else None,
+            'url_factura': self.url_factura,
+            'kilometraje_actual': self.kilometraje_actual,
+            'url_foto': self.url_foto,
+            'placa': self.placa.to_dict() if self.placa else None,
+            'empresa_nombre': self.empresa.nombre_comercial if self.empresa else None,
+            'sucursal_nombre': self.sucursal_rel.nombre if self.sucursal_rel else None
         }
-
-
 
 class Placas(db.Model):
     __tablename__ = "Placas"
+
     id_placa = db.Column(db.Integer, primary_key=True)
     id_unidad = db.Column(db.Integer, db.ForeignKey('Unidades.id_unidad'), nullable=False)
     folio = db.Column(db.String(50))
@@ -165,6 +178,10 @@ class Placas(db.Model):
     url_placa_frontal = db.Column(db.String(255))
     url_placa_trasera = db.Column(db.String(255))
     requiere_renovacion = db.Column(db.Boolean, default=False)
+    monto_pago = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    url_comprobante_pago = db.Column(db.String(255))
+    url_tarjeta_circulacion = db.Column(db.String(255))
+
     def to_dict(self):
         return {
             'id_placa': self.id_placa,
@@ -175,9 +192,14 @@ class Placas(db.Model):
             'fecha_vigencia': str(self.fecha_vigencia) if self.fecha_vigencia else None,
             'url_placa_frontal': self.url_placa_frontal,
             'url_placa_trasera': self.url_placa_trasera,
-            'requiere_renovacion': self.requiere_renovacion
+            'requiere_renovacion': self.requiere_renovacion,
+            'monto_pago': float(self.monto_pago) if self.monto_pago else 0,
+            'url_comprobante_pago': self.url_comprobante_pago,
+            'url_tarjeta_circulacion': self.url_tarjeta_circulacion
         }
 
+
+# Modelo principal de Garantias
 class Garantias(db.Model):
     __tablename__ = "Garantias"
     
@@ -191,13 +213,17 @@ class Garantias(db.Model):
     inicio_vigencia = db.Column(db.Date)
     vigencia = db.Column(db.Date)
     prima = db.Column(db.Numeric(15,2))
+    telefono_fijo = db.Column(db.String(20))    # NUEVO
+    telefono_celular = db.Column(db.String(20)) # NUEVO
 
     unidad = db.relationship("Unidades", backref="garantias")
 
+
+# Modelo de historial de Garantías
 class HistorialGarantias(db.Model):
     __tablename__ = "HistorialGarantias"
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_historial = db.Column(db.Integer, primary_key=True, autoincrement=True)
     id_garantia = db.Column(db.Integer)
     id_unidad = db.Column(db.Integer)
     fecha_cambio = db.Column(db.DateTime, default=datetime.now)
@@ -209,22 +235,40 @@ class HistorialGarantias(db.Model):
     inicio_vigencia = db.Column(db.Date)
     vigencia = db.Column(db.Date)
     prima = db.Column(db.Numeric(15,2))
+    telefono_fijo = db.Column(db.String(20))    # NUEVO
+    telefono_celular = db.Column(db.String(20)) # NUEVO
     usuario = db.Column(db.String(50))
+
 
 
 class HistorialPlaca(db.Model):
     __tablename__ = "HistorialPlacas"
     id_historial = db.Column(db.Integer, primary_key=True)
+    
+    # Relaciones y referencias
     id_placa = db.Column(db.Integer, db.ForeignKey('Placas.id_placa'), nullable=False)
     id_unidad = db.Column(db.Integer, nullable=False)
+    
+    # Fechas y auditoría
     fecha_cambio = db.Column(db.DateTime, server_default=db.func.current_timestamp())
+    
+    # Datos de la placa
     folio = db.Column(db.String(50))
     placa = db.Column(db.String(10))
     fecha_expedicion = db.Column(db.Date)
     fecha_vigencia = db.Column(db.Date)
+    
+    # Archivos asociados
     url_placa_frontal = db.Column(db.String(255))
     url_placa_trasera = db.Column(db.String(255))
+    url_comprobante_pago = db.Column(db.String(255))
+    url_tarjeta_circulacion = db.Column(db.String(255))
+    
+    # Otros campos
+    monto_pago = db.Column(db.Float)
+    requiere_renovacion = db.Column(db.Boolean, default=False)
     usuario = db.Column(db.String(100))
+
 
 
 class VerificacionVehicular(db.Model):
@@ -312,6 +356,58 @@ class FallaMecanica(db.Model):
     observaciones = db.Column(db.Text)
     url_comprobante = db.Column(db.String(500))
 
+    # Relaciones
+    marca_rel = db.relationship("MarcasPiezas", backref="fallas")
+    pieza_rel = db.relationship("Piezas", backref="fallas")  # <-- agregada
+    lugar_rel = db.relationship("LugarReparacion", backref="fallas")  # opcional
+
+    def to_dict(self):
+        return {
+            "id_falla": self.id_falla,
+            "id_unidad": self.id_unidad,
+            "pieza": self.pieza_rel.nombre_pieza if self.pieza_rel else None,  # usa la relación
+            "marca": self.marca_rel.nombre_marca if self.marca_rel else None,
+            "lugar_reparacion": self.lugar_rel.nombre_lugar if self.lugar_rel else None,
+            "tipo_servicio": self.tipo_servicio,
+            "descripcion": self.descripcion,
+            "proveedor": self.proveedor,
+            "costo": float(self.costo) if self.costo else None,
+            "fecha_falla": self.fecha_falla.strftime("%Y-%m-%d") if self.fecha_falla else None
+        }
+
+
+class FallasMensajes(db.Model):
+    __tablename__ = 'fallas_mensajes'
+    id_mensaje = db.Column(db.Integer, primary_key=True)
+    id_falla = db.Column(db.Integer, db.ForeignKey('fallasmecanicas.id_falla'))
+    id_usuario = db.Column(db.Integer, db.ForeignKey('usuarios.id_usuario'))
+    mensaje = db.Column(db.Text, nullable=False)
+    archivo_adjunto = db.Column(db.String(255))
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relaciones
+    falla = db.relationship("FallaMecanica", backref="mensajes")  # <-- usar el nombre correcto de la clase
+
+
+# -------------------------------
+# Modelo para mensajes de solicitudes
+# -------------------------------
+class SolicitudFallaMensajes(db.Model):
+    __tablename__ = "solicitudes_mensajes"
+    id_mensaje = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_solicitud = db.Column(db.Integer, db.ForeignKey("solicitudesfallas.id_solicitud"))
+    id_usuario = db.Column(db.Integer, db.ForeignKey("usuarios.id_usuario"))
+    mensaje = db.Column(db.Text, nullable=False)
+    archivo_adjunto = db.Column(db.String(255))  # <-- esto faltaba
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relaciones
+    solicitud = db.relationship("SolicitudFalla", backref="mensajes")  # para acceder a la solicitud
+    usuario = db.relationship("Usuarios", backref="mensajes")  # para acceder al usuario que envía
+
+
+
+
 class Piezas(db.Model):
     __tablename__ = "piezas"
     id_pieza = db.Column(db.Integer, primary_key=True)
@@ -325,19 +421,17 @@ class MarcasPiezas(db.Model):
     pais_origen = db.Column(db.String(100))
     observaciones = db.Column(db.Text)
 
-
 class Refrendo_Tenencia(db.Model):
     __tablename__ = 'Refrendo_Tenencia'
     id_pago = db.Column(db.Integer, primary_key=True, autoincrement=True)
     id_unidad = db.Column(db.Integer, db.ForeignKey('Unidades.id_unidad'), nullable=False)
-    tipo_pago = db.Column(db.Enum('REFRENDO','TENENCIA','AMBOS'), nullable=False, default='REFRENDO')
+    tipo_pago = db.Column(db.Enum('REFRENDO','TENENCIA','AMBOS','PENDIENTE'), nullable=False, default='REFRENDO')
     monto = db.Column(db.Numeric(10,2), nullable=False, default=0)
     monto_refrendo = db.Column(db.Numeric(10,2), nullable=False, default=0)
     monto_tenencia = db.Column(db.Numeric(10,2), nullable=False, default=0)
     fecha_pago = db.Column(db.Date, nullable=False)
     limite_pago = db.Column(db.Date, nullable=False)
-    url_factura_refrendo = db.Column(db.String(255))
-    url_factura_tenencia = db.Column(db.String(255))
+    url_factura = db.Column(db.String(255))  # <-- Solo un archivo
     observaciones = db.Column(db.Text)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -350,13 +444,12 @@ class Historial_Refrendo_Tenencia(db.Model):
     id_historial = db.Column(db.Integer, primary_key=True, autoincrement=True)
     id_pago = db.Column(db.Integer, db.ForeignKey('Refrendo_Tenencia.id_pago'), nullable=False)
     id_unidad = db.Column(db.Integer, db.ForeignKey('Unidades.id_unidad'), nullable=False)
-    tipo_pago = db.Column(db.Enum('REFRENDO','TENENCIA','AMBOS'), nullable=False)
+    tipo_pago = db.Column(db.Enum('REFRENDO','TENENCIA','AMBOS','PENDIENTE'), nullable=False)
     monto = db.Column(db.Numeric(10,2), default=0)
     monto_refrendo = db.Column(db.Numeric(10,2), default=0)
     monto_tenencia = db.Column(db.Numeric(10,2), default=0)
     fecha_pago = db.Column(db.Date)
-    url_factura_refrendo = db.Column(db.String(255))
-    url_factura_tenencia = db.Column(db.String(255))
+    url_factura = db.Column(db.String(255))  # <-- Solo un archivo
     observaciones = db.Column(db.Text)
     fecha_registro = db.Column(db.DateTime, default=datetime.utcnow)
     tipo_movimiento = db.Column(db.Enum('REGISTRO','ACTUALIZACION','ELIMINACION'), nullable=False)
@@ -431,6 +524,46 @@ class HistorialAsignaciones(db.Model):
     fecha_fin = db.Column(db.Date)
     usuario = db.Column(db.String(100))
 
+
+class Empresa(db.Model):
+    __tablename__ = 'empresa'
+    id_empresa = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    razon_social = db.Column(db.String(255))
+    rfc = db.Column(db.String(20))
+    regimen_fiscal = db.Column(db.String(255))
+    nombre_comercial = db.Column(db.String(255))
+    direccion = db.Column(db.String(255))
+    inicio_operaciones = db.Column(db.Date)
+    estatus = db.Column(db.String(10))
+    actividad_economica = db.Column(db.String(255))
+    sucursales = db.relationship("Sucursal", backref="empresa", cascade="all, delete-orphan")
+
+    
+class Sucursal(db.Model):
+    __tablename__ = "sucursales"
+    id_sucursal = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    nombre = db.Column(db.String(255), nullable=False)
+    direccion = db.Column(db.String(255))
+    telefono = db.Column(db.String(20))
+    correo = db.Column(db.String(100))
+    horario = db.Column(db.String(100))
+    id_empresa = db.Column(db.Integer, db.ForeignKey("empresa.id_empresa"), nullable=False)
+
+
+class Alerta(db.Model):
+    __tablename__ = "alertas"
+    id_alerta = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    id_unidad = db.Column(db.Integer, db.ForeignKey("Unidades.id_unidad", ondelete="CASCADE", onupdate="CASCADE"), nullable=False)
+    tipo_alerta = db.Column(db.String(50), nullable=False)
+    descripcion = db.Column(db.Text, nullable=False)
+    fecha_generada = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    fecha_resuelta = db.Column(db.DateTime, nullable=True)
+    estado = db.Column(db.String(20), nullable=False, default="pendiente")  # pendiente / enviada / atendida
+    detalle = db.Column(db.JSON, nullable=True)
+
+    # Relación con unidad
+    unidad = db.relationship("Unidades", backref=db.backref("alertas", lazy=True))
+
 #==============================================================================================================================
 
 def get_db_connection():
@@ -496,6 +629,12 @@ def login():
       #  return jsonify({"error": str(e)}), 500
 
 
+
+# Función para enviar correo en segundo plano
+def enviar_correo_async(app, msg):
+    with app.app_context():
+        mail.send(msg)
+
 @app.route('/api/usuarios', methods=['POST'])
 def crear_usuario():
     data = request.json
@@ -506,7 +645,7 @@ def crear_usuario():
         contraseña = data.get('contraseña')
         correo = data.get('correo')
         rol = data.get('rol', 'usuario')
-        id_chofer = data.get('id_chofer')  # opcional para chofer existente
+        id_chofer = data.get('id_chofer')  # opcional
 
         # --- Datos del chofer si se va a crear uno nuevo ---
         crear_chofer = data.get('crear_chofer', False)
@@ -531,7 +670,7 @@ def crear_usuario():
                 licencia_vigencia=chofer_data.get('licencia_vigencia')
             )
             db.session.add(nuevo_chofer)
-            db.session.flush()  # Para obtener el id antes del commit
+            db.session.flush()  # Para obtener el id
             id_chofer = nuevo_chofer.id_chofer
             rol = 'chofer'  # forzar rol chofer
 
@@ -539,7 +678,7 @@ def crear_usuario():
         nuevo_usuario = Usuarios(
             nombre=nombre,
             usuario=usuario,
-            contraseña=generate_password_hash(contraseña),
+            contraseña=generate_password_hash(contraseña),  # Guardamos el hash
             correo=correo,
             rol=rol,
             id_chofer=id_chofer
@@ -547,11 +686,20 @@ def crear_usuario():
         db.session.add(nuevo_usuario)
         db.session.commit()
 
-        return jsonify({"mensaje": "Usuario creado correctamente"}), 201
+        # --- Enviar correo en segundo plano ---
+        msg = Message(
+            subject="Tus credenciales de acceso",
+            recipients=[correo],
+            body=f"Hola {nombre},\n\nTu usuario ha sido creado exitosamente.\n\nUsuario: {usuario}\nContraseña: {contraseña}\n\nTe recomendamos cambiar tu contraseña después de iniciar sesión.\n\nSaludos."
+        )
+        threading.Thread(target=enviar_correo_async, args=(app, msg)).start()
+
+        return jsonify({"mensaje": "Usuario creado correctamente y correo enviado"}), 201
 
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/usuarios', methods=['GET'])
 def obtener_usuarios():
@@ -750,53 +898,84 @@ def get_unidades_data():
     conn = db.engine.raw_connection()
     try:
         cursor = conn.cursor()
-        query = """
-        SELECT
-        U.id_unidad,
-        U.marca,
-        U.vehiculo,
-        U.modelo,
-        U.niv,
-        P.placa,
-        U.fecha_adquisicion,
-        P.fecha_vigencia AS fecha_vencimiento_tarjeta,
-        CASE WHEN P.fecha_vigencia < CURDATE() THEN 'Vencida' ELSE 'Activa' END AS estado_tarjeta,
-        V.engomado,
-        C.nombre AS chofer_asignado,
-        JSON_OBJECT(
-            'color', U.color,
-            'clase_tipo', U.clase_tipo,
-            'motor', U.motor,
-            'transmision', U.transmision,
-            'combustible', U.combustible,
-            'sucursal', U.sucursal,
-            'compra_arrendado', U.compra_arrendado,
-            'propietario', U.propietario,
-            'uid', U.uid,
-            'telefono_gps', U.telefono_gps,
-            'sim_gps', U.sim_gps,
-            'no_poliza', G.no_poliza,
-            'folio_verificacion', V.folio_verificacion
-        ) AS mas_datos
-    FROM Unidades U
-    LEFT JOIN (
-        SELECT * FROM Placas P1
-        WHERE P1.id_placa = (SELECT P2.id_placa FROM Placas P2 WHERE P2.id_unidad = P1.id_unidad ORDER BY P2.fecha_vigencia DESC LIMIT 1)
-    ) P ON U.id_unidad = P.id_unidad
-    LEFT JOIN (
-        SELECT * FROM Garantias G1
-        WHERE G1.id_garantia = (SELECT G2.id_garantia FROM Garantias G2 WHERE G2.id_unidad = G1.id_unidad ORDER BY G2.vigencia DESC LIMIT 1)
-    ) G ON U.id_unidad = G.id_unidad
-    LEFT JOIN (
-        SELECT * FROM VerificacionVehicular V1
-        WHERE V1.id_verificacion = (SELECT V2.id_verificacion FROM VerificacionVehicular V2 WHERE V2.id_unidad = V1.id_unidad ORDER BY V2.ultima_verificacion DESC LIMIT 1)
-    ) V ON U.id_unidad = V.id_unidad
-    LEFT JOIN Asignaciones A ON U.id_unidad = A.id_unidad AND A.fecha_fin IS NULL
-    LEFT JOIN Choferes C ON A.id_chofer = C.id_chofer
-    ORDER BY U.id_unidad;
 
+        # Obtener filtros desde query string
+        filtros = []
+        params = []
+
+        id_empresa = request.args.get('id_empresa')
+        if id_empresa:
+            filtros.append("U.id_empresa = %s")
+            params.append(id_empresa)
+
+        sucursal = request.args.get('sucursal')
+        if sucursal:
+            filtros.append("U.sucursal = %s")
+            params.append(sucursal)
+
+        estado_tarjeta = request.args.get('estado_tarjeta')
+        if estado_tarjeta:
+            filtros.append(
+                "CASE WHEN P.fecha_vigencia < CURDATE() THEN 'Vencida' ELSE 'Activa' END = %s"
+            )
+            params.append(estado_tarjeta)
+
+        # Construir WHERE dinámico
+        where_clause = f"WHERE {' AND '.join(filtros)}" if filtros else ""
+
+        query = f"""
+        SELECT
+            U.id_unidad,
+            U.marca,
+            U.vehiculo,
+            U.modelo,
+            U.niv,
+            P.placa,
+            U.fecha_adquisicion,
+            P.fecha_vigencia AS fecha_vencimiento_tarjeta,
+            CASE WHEN P.fecha_vigencia < CURDATE() THEN 'Vencida' ELSE 'Activa' END AS estado_tarjeta,
+            V.engomado,
+            C.nombre AS chofer_asignado,
+            U.valor_factura,
+            U.url_factura,
+            U.kilometraje_actual,
+            U.url_foto,
+            U.id_empresa,
+            U.sucursal,
+            JSON_OBJECT(
+                'color', U.color,
+                'clase_tipo', U.clase_tipo,
+                'motor', U.motor,
+                'transmision', U.transmision,
+                'combustible', U.combustible,
+                'compra_arrendado', U.compra_arrendado,
+                'propietario', U.propietario,
+                'uid', U.uid,
+                'telefono_gps', U.telefono_gps,
+                'sim_gps', U.sim_gps,
+                'no_poliza', G.no_poliza,
+                'folio_verificacion', V.folio_verificacion
+            ) AS mas_datos
+        FROM Unidades U
+        LEFT JOIN (
+            SELECT * FROM Placas P1
+            WHERE P1.id_placa = (SELECT P2.id_placa FROM Placas P2 WHERE P2.id_unidad = P1.id_unidad ORDER BY P2.fecha_vigencia DESC LIMIT 1)
+        ) P ON U.id_unidad = P.id_unidad
+        LEFT JOIN (
+            SELECT * FROM Garantias G1
+            WHERE G1.id_garantia = (SELECT G2.id_garantia FROM Garantias G2 WHERE G2.id_unidad = G1.id_unidad ORDER BY G2.vigencia DESC LIMIT 1)
+        ) G ON U.id_unidad = G.id_unidad
+        LEFT JOIN (
+            SELECT * FROM VerificacionVehicular V1
+            WHERE V1.id_verificacion = (SELECT V2.id_verificacion FROM VerificacionVehicular V2 WHERE V2.id_unidad = V1.id_unidad ORDER BY V2.ultima_verificacion DESC LIMIT 1)
+        ) V ON U.id_unidad = V.id_unidad
+        LEFT JOIN Asignaciones A ON U.id_unidad = A.id_unidad AND A.fecha_fin IS NULL
+        LEFT JOIN Choferes C ON A.id_chofer = C.id_chofer
+        {where_clause}
+        ORDER BY U.id_unidad;
         """
-        cursor.execute(query)
+
+        cursor.execute(query, tuple(params))
         columns = [col[0] for col in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
@@ -807,7 +986,7 @@ def get_unidades_data():
             if unidad['fecha_vencimiento_tarjeta']:
                 unidad['fecha_vencimiento_tarjeta'] = unidad['fecha_vencimiento_tarjeta'].strftime('%Y-%m-%d')
             if unidad['mas_datos']:
-                unidad['mas_datos'] = json.loads(unidad['mas_datos'])  # Convertir JSON string a dict
+                unidad['mas_datos'] = json.loads(unidad['mas_datos'])
 
         return jsonify(results), 200
     except Exception as e:
@@ -816,62 +995,112 @@ def get_unidades_data():
     finally:
         cursor.close()
         conn.close()
+
 # =======================
 # PUT - Actualizar unidad
 # =======================
 @app.route('/api/unidades/<int:id_unidad>', methods=['PUT'])
 def update_unidad(id_unidad):
-    data = request.json
-    conn = db.engine.raw_connection()
     try:
-        cursor = conn.cursor()
-        query = """
-        UPDATE Unidades
-        SET marca = %s,
-            vehiculo = %s,
-            modelo = %s,
-            niv = %s,
-            fecha_adquisicion = %s,
-            color = %s,
-            clase_tipo = %s,
-            motor = %s,
-            transmision = %s,
-            combustible = %s,
-            sucursal = %s,
-            compra_arrendado = %s,
-            propietario = %s,
-            uid = %s,
-            telefono_gps = %s,
-            sim_gps = %s
-        WHERE id_unidad = %s
-        """
-        cursor.execute(query, (
-            data.get("marca"),
-            data.get("vehiculo"),
-            data.get("modelo"),
-            data.get("niv"),
-            data.get("fecha_adquisicion"),
-            data.get("color"),
-            data.get("clase_tipo"),
-            data.get("motor"),
-            data.get("transmision"),
-            data.get("combustible"),
-            data.get("sucursal"),
-            data.get("compra_arrendado"),
-            data.get("propietario"),
-            data.get("uid"),
-            data.get("telefono_gps"),
-            data.get("sim_gps"),
-            id_unidad
-        ))
-        conn.commit()
-        return jsonify({"message": "Unidad actualizada correctamente"}), 200
+        print("=== INICIO UPDATE UNIDAD ===")
+        UPLOAD_IMG = 'uploads/unidades_imagen'
+        UPLOAD_PLACAS = 'uploads/placas'
+        UPLOAD_FACTURAS = 'uploads/facturas'
+
+        # Crear carpetas si no existen
+        os.makedirs(UPLOAD_IMG, exist_ok=True)
+        os.makedirs(UPLOAD_PLACAS, exist_ok=True)
+        os.makedirs(UPLOAD_FACTURAS, exist_ok=True)
+        print("Carpetas de subida verificadas")
+
+        # Obtener datos del formulario y archivos
+        data = request.form
+        files = request.files
+        print("Datos recibidos:", data)
+        print("Archivos recibidos:", files)
+        print("ID unidad a actualizar:", id_unidad)
+
+        # Obtener la unidad
+        unidad = db.session.get(Unidades, id_unidad)
+        if not unidad:
+            print("Unidad no encontrada")
+            return jsonify({"error": "Unidad no encontrada"}), 404
+        print("Unidad encontrada:", unidad.to_dict())
+
+        # Actualizar campos básicos
+        campos = ["marca", "vehiculo", "modelo", "clase_tipo", "niv",
+                  "motor", "transmision", "combustible", "color",
+                  "telefono_gps", "sim_gps", "uid", "propietario",
+                  "compra_arrendado", "valor_factura", "kilometraje_actual"]
+        for campo in campos:
+            valor = data.get(campo)
+            setattr(unidad, campo, valor)
+            print(f"Campo {campo} actualizado a:", valor)
+
+        # Fecha de adquisición
+        fecha_adq = data.get("fecha_adquisicion")
+        unidad.fecha_adquisicion = date.fromisoformat(fecha_adq) if fecha_adq else unidad.fecha_adquisicion
+        print("Fecha de adquisición:", unidad.fecha_adquisicion)
+
+        # Empresa y sucursal
+        id_empresa = data.get("empresa")
+        id_sucursal = data.get("sucursal")
+        unidad.id_empresa = int(id_empresa) if id_empresa else unidad.id_empresa
+        unidad.sucursal = int(id_sucursal) if id_sucursal else unidad.sucursal
+        print("Empresa y sucursal actualizadas:", unidad.id_empresa, unidad.sucursal)
+
+        # Función para guardar archivos
+        def guardar_archivo_sobre(file_obj, carpeta, prefijo="archivo"):
+            if not file_obj:
+                return None
+            ext = os.path.splitext(file_obj.filename)[1]
+            filename = secure_filename(f"{prefijo}_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}")
+            path = os.path.join(carpeta, filename)
+            file_obj.save(path)
+            print(f"Archivo guardado: {filename} en {carpeta}")
+            return f"{carpeta}/{filename}".replace("\\", "/")
+
+        # Foto unidad
+        foto = files.get("foto_unidad")
+        if foto and allowed_image(foto.filename):
+            unidad.url_foto = guardar_archivo_sobre(foto, UPLOAD_IMG, prefijo=f"unidad_{id_unidad}")
+            print("URL foto unidad:", unidad.url_foto)
+
+        # Factura
+        pdf_factura = files.get("pdf_factura")
+        if pdf_factura and allowed_pdf(pdf_factura.filename):
+            unidad.url_factura = guardar_archivo_sobre(pdf_factura, UPLOAD_FACTURAS, prefijo=f"factura_{id_unidad}")
+            print("URL factura:", unidad.url_factura)
+
+        # Placas
+        pdf_frontal = files.get("pdf_frontal")
+        pdf_trasero = files.get("pdf_trasero")
+        if any([data.get("placa"), data.get("folio"), data.get("fecha_expedicion"), data.get("fecha_vigencia"), pdf_frontal, pdf_trasero]):
+            placa = unidad.placa or Placas()
+            placa.placa = data.get("placa")
+            placa.folio = data.get("folio")
+            fecha_exp = data.get("fecha_expedicion")
+            fecha_vig = data.get("fecha_vigencia")
+            placa.fecha_expedicion = date.fromisoformat(fecha_exp) if fecha_exp else placa.fecha_expedicion
+            placa.fecha_vigencia = date.fromisoformat(fecha_vig) if fecha_vig else placa.fecha_vigencia
+            if pdf_frontal and allowed_pdf(pdf_frontal.filename):
+                placa.url_placa_frontal = guardar_archivo_sobre(pdf_frontal, UPLOAD_PLACAS, prefijo=f"frontal_{id_unidad}")
+            if pdf_trasero and allowed_pdf(pdf_trasero.filename):
+                placa.url_placa_trasera = guardar_archivo_sobre(pdf_trasero, UPLOAD_PLACAS, prefijo=f"trasero_{id_unidad}")
+            unidad.placa = placa
+            print("Placas actualizadas:", placa.placa, placa.folio)
+
+        # Guardar cambios
+        db.session.commit()
+        print("Unidad actualizada correctamente en la base de datos")
+
+        return jsonify({"message": "Unidad actualizada correctamente", "unidad": unidad.to_dict()}), 200
+
     except Exception as e:
-        print(f"Error al actualizar: {e}")
-        return jsonify({"error": "Error al actualizar la unidad"}), 500
-    finally:
-        cursor.close()
-        conn.close()
+        db.session.rollback()
+        print("Error al actualizar unidad:", str(e))
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 #ELIMINACION DE UNIDADES
 @app.route('/api/unidades/<int:id_unidad>', methods=['DELETE'])
@@ -893,17 +1122,71 @@ def delete_unidad(id_unidad):
 
 
 
-ALLOWED_EXTENSIONS = {'pdf'}
+# Extensiones permitidas
+ALLOWED_IMAGE_EXT = {'png', 'jpg', 'jpeg', 'webp'}
+ALLOWED_PDF_EXT = {'pdf'}
 
+def allowed_image(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXT
+
+def allowed_pdf(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_PDF_EXT
 
 
 @app.route('/api/unidades', methods=['POST'])
 def agregar_unidad():
     try:
-        UPLOAD_FOLDER = 'uploads/placas_pdf'
-        # Datos del formulario
-        data = request.form
+        print("\n=== INICIO DE REGISTRO DE UNIDAD ===\n")
 
+        # ----------------------------
+        # Carpetas
+        # ----------------------------
+        UPLOAD_IMG = 'uploads/unidades_imagen'
+        UPLOAD_PLACAS = 'uploads/placas'
+        UPLOAD_FACTURAS = 'uploads/facturas'
+        PAGO_DIR = 'uploads/pagos/'
+        TARJETA_DIR = 'uploads/tarjetas_circulacion/'
+
+        os.makedirs(UPLOAD_IMG, exist_ok=True)
+        os.makedirs(UPLOAD_PLACAS, exist_ok=True)
+        os.makedirs(UPLOAD_FACTURAS, exist_ok=True)
+        os.makedirs(PAGO_DIR, exist_ok=True)
+        os.makedirs(TARJETA_DIR, exist_ok=True)
+
+        data = request.form
+        print("=== DATA RECIBIDA ===")
+        for key, value in data.items():
+            print(f"{key}: {value}")
+
+        print("\n=== FILES RECIBIDOS ===")
+        for key, file in request.files.items():
+            print(f"{key}: {file.filename}")
+        print("========================\n")
+
+        # ----------------------------
+        # Validar sucursal y empresa
+        # ----------------------------
+        id_sucursal = data.get("sucursal")
+        id_empresa = data.get("empresa")
+        try:
+            id_sucursal = int(id_sucursal)
+            id_empresa = int(id_empresa)
+        except (ValueError, TypeError):
+            return jsonify({"error": "ID de sucursal o empresa inválido"}), 400
+
+        sucursal_obj = db.session.get(Sucursal, id_sucursal)
+        empresa_obj = db.session.get(Empresa, id_empresa)
+
+        if not empresa_obj:
+            return jsonify({"error": f"Empresa no encontrada. ID recibido: {id_empresa}"}), 400
+        if not sucursal_obj:
+            return jsonify({"error": f"Sucursal no encontrada. ID recibido: {id_sucursal}"}), 400
+        if sucursal_obj.id_empresa != empresa_obj.id_empresa:
+            return jsonify({"error": f"La sucursal {id_sucursal} no pertenece a la empresa {id_empresa}"}), 400
+
+        # ----------------------------
+        # Crear unidad
+        # ----------------------------
         nueva_unidad = Unidades(
             marca=data.get("marca"),
             vehiculo=data.get("vehiculo"),
@@ -918,52 +1201,134 @@ def agregar_unidad():
             sim_gps=data.get("sim_gps"),
             uid=data.get("uid"),
             propietario=data.get("propietario"),
-            sucursal=data.get("sucursal"),
+            sucursal=id_sucursal,
+            id_empresa=id_empresa,
             compra_arrendado=data.get("compra_arrendado"),
-            fecha_adquisicion=data.get("fecha_adquisicion")
+            fecha_adquisicion=date.fromisoformat(data.get("fecha_adquisicion")) if data.get("fecha_adquisicion") else None,
+            valor_factura=data.get("valor_factura"),
+            kilometraje_actual=data.get("kilometraje_actual")
         )
 
-        # Guardar archivos PDF
+        # ----------------------------
+        # Guardar imagen de unidad
+        # ----------------------------
+        img_file = request.files.get("foto_unidad")
+        if img_file and allowed_image(img_file.filename):
+            ext = os.path.splitext(img_file.filename)[1]
+            filename = secure_filename(f"unidad_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}")
+            abs_path = os.path.join(UPLOAD_IMG, filename)
+            img_file.save(abs_path)
+            nueva_unidad.url_foto = f"{UPLOAD_IMG}/{filename}".replace("\\", "/")
+        elif img_file:
+            return jsonify({"error": "La imagen debe ser JPG, JPEG, PNG o WEBP"}), 400
+
+        # ----------------------------
+        # Guardar PDF
+        # ----------------------------
+        def guardar_pdf_unico(file_obj, carpeta):
+            if not file_obj or not allowed_pdf(file_obj.filename):
+                return None
+            ext = os.path.splitext(file_obj.filename)[1]
+            filename = secure_filename(f"{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}")
+            abs_path = os.path.join(carpeta, filename)
+            file_obj.save(abs_path)
+            return f"{carpeta}/{filename}".replace("\\", "/")
+
+        pdf_factura = request.files.get("pdf_factura")
+        if pdf_factura:
+            if not allowed_pdf(pdf_factura.filename):
+                return jsonify({"error": "La factura debe ser PDF"}), 400
+            nueva_unidad.url_factura = guardar_pdf_unico(pdf_factura, UPLOAD_FACTURAS)
+
+        # ----------------------------
+        # Guardar unidad en BD primero
+        # ----------------------------
+        db.session.add(nueva_unidad)
+        db.session.commit()  # ahora nueva_unidad.id_unidad existe
+
+        # ----------------------------
+        # Guardar placas si hay datos o archivos
+        # ----------------------------
         pdf_frontal = request.files.get("pdf_frontal")
         pdf_trasero = request.files.get("pdf_trasero")
-        url_frontal = None
-        url_trasero = None
+        comprobante = request.files.get("comprobante")
+        tarjeta = request.files.get("tarjeta_circulacion")
 
-        if pdf_frontal:
-            filename = secure_filename(pdf_frontal.filename)
-            pdf_frontal.save(f"uploads/placas/{filename}")
-            url_frontal = f"uploads/placas/{filename}"
+        if any([data.get("placa"), data.get("folio"), data.get("fecha_expedicion"),
+                data.get("fecha_vigencia"), pdf_frontal, pdf_trasero, comprobante, tarjeta]):
 
-        if pdf_trasero:
-            filename = secure_filename(pdf_trasero.filename)
-            pdf_trasero.save(f"uploads/placas/{filename}")
-            url_trasero = f"uploads/placas/{filename}"
+            nueva_placa = Placas(
+                id_unidad=nueva_unidad.id_unidad,
+                folio=data.get("folio"),
+                placa=data.get("placa"),
+                fecha_expedicion=date.fromisoformat(data.get("fecha_expedicion")) if data.get("fecha_expedicion") else None,
+                fecha_vigencia=date.fromisoformat(data.get("fecha_vigencia")) if data.get("fecha_vigencia") else None,
+                url_placa_frontal=guardar_pdf_unico(pdf_frontal, UPLOAD_PLACAS),
+                url_placa_trasera=guardar_pdf_unico(pdf_trasero, UPLOAD_PLACAS),
+                url_comprobante_pago=guardar_pdf_unico(comprobante, PAGO_DIR),
+                url_tarjeta_circulacion=guardar_pdf_unico(tarjeta, TARJETA_DIR),
+                monto_pago=float(data.get("monto_pago") or 0)
+            )
+            db.session.add(nueva_placa)
+            db.session.commit()
 
-        # Crear placa
-        nueva_placa = Placas(
-            folio=data.get("folio"),
-            placa=data.get("placa"),
-            fecha_expedicion=data.get("fecha_expedicion"),
-            fecha_vigencia=data.get("fecha_vigencia"),
-            url_placa_frontal=url_frontal,
-            url_placa_trasera=url_trasero
-        )
+        # ----------------------------
+        # Programar mantenimientos iniciales según la marca de la unidad
+        # ----------------------------
+        try:
+            frecuencias = FrecuenciasPorMarca.query.filter_by(marca=nueva_unidad.marca).all()
+            created = []
+            for f in frecuencias:
+                # Evitar duplicados por unidad y tipo de mantenimiento
+                existe = MantenimientosProgramados.query.filter_by(
+                    id_unidad=nueva_unidad.id_unidad,
+                    id_tipo_mantenimiento=f.id_tipo_mantenimiento
+                ).first()
+                if existe:
+                    continue
 
-        nueva_unidad.placa = nueva_placa
+                proximo_fecha = date.today() + timedelta(days=f.frecuencia_tiempo)
+                proximo_km = (nueva_unidad.kilometraje_actual or 0) + f.frecuencia_kilometraje
 
-        db.session.add(nueva_unidad)
-        db.session.commit()
+                mp = MantenimientosProgramados(
+                    id_unidad=nueva_unidad.id_unidad,
+                    id_tipo_mantenimiento=f.id_tipo_mantenimiento,
+                    fecha_ultimo_mantenimiento=None,
+                    kilometraje_ultimo=None,
+                    proximo_mantenimiento=proximo_fecha,
+                    proximo_kilometraje=proximo_km
+                )
+                db.session.add(mp)
+                db.session.flush()  # para obtener id si es necesario
+                created.append(mp.id_mantenimiento_programado)
+            db.session.commit()
+            print(f"Mantenimientos programados para la unidad {nueva_unidad.id_unidad}: {created}")
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error al programar mantenimientos iniciales: {e}")
 
-        return jsonify({"mensaje": "Unidad y placa registradas exitosamente.", "unidad": nueva_unidad.to_dict()}), 201
+        # ----------------------------
+        # Retorno
+        # ----------------------------
+        return jsonify({
+            "mensaje": "Unidad registrada exitosamente.",
+            "unidad": nueva_unidad.to_dict()
+        }), 201
 
     except Exception as e:
         db.session.rollback()
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
- #============================================================================
- #Asignaciones
- #===========================================================================
+        
+import threading
+from datetime import date
+from flask_mail import Message
+
+# Función para enviar correo en segundo plano
+def enviar_correo_async(app, msg):
+    with app.app_context():
+        mail.send(msg)
 
 @app.route('/asignaciones', methods=['POST'])
 def crear_asignacion():
@@ -971,36 +1336,63 @@ def crear_asignacion():
     id_chofer = data.get('id_chofer')
     id_unidad = data.get('id_unidad')
     usuario = data.get('usuario', 'sistema')
+    fecha_asignacion = date.today()
 
-    # Validaciones
+    # Validaciones básicas
     if not id_chofer or not id_unidad:
-        return jsonify({"error":"id_chofer y id_unidad son requeridos"}), 400
+        return jsonify({"error": "id_chofer y id_unidad son requeridos"}), 400
 
-    # Evitar duplicados activos
-    asignacion_existente = Asignaciones.query.filter_by(id_chofer=id_chofer, id_unidad=id_unidad, fecha_fin=None).first()
+    # Validar que la unidad tenga placas
+    placa_unidad = Placas.query.filter_by(id_unidad=id_unidad).first()
+
+    if not Unidades or not placa_unidad or not placa_unidad.placa or placa_unidad.placa.strip() == "":
+        return jsonify({"error": "La unidad no tiene una placa válida registrada"}), 400
+
+    # Evitar duplicados exactos por fecha
+    asignacion_existente = Asignaciones.query.filter_by(
+        id_chofer=id_chofer,
+        id_unidad=id_unidad,
+        fecha_asignacion=fecha_asignacion
+    ).first()
+
     if asignacion_existente:
-        return jsonify({"error":"El chofer ya está asignado a esta unidad"}), 400
+        return jsonify({"error": "El chofer ya tiene asignada esta unidad en esta fecha"}), 400
 
+    # Crear asignación
     nueva = Asignaciones(
         id_chofer=id_chofer,
         id_unidad=id_unidad,
-        fecha_asignacion=date.today()
+        fecha_asignacion=fecha_asignacion
     )
     db.session.add(nueva)
-    db.session.flush()  # para obtener id_asignacion
+    db.session.flush()  # Para obtener id_asignacion antes del commit
 
-    # Registrar en historial
+    # Registrar historial
     historial = HistorialAsignaciones(
         id_asignacion=nueva.id_asignacion,
         id_chofer=id_chofer,
-        fecha_asignacion=date.today(),
+        fecha_asignacion=fecha_asignacion,
         fecha_fin=None,
         usuario=usuario
     )
     db.session.add(historial)
     db.session.commit()
 
-    return jsonify({"message":"Asignación creada", "id_asignacion": nueva.id_asignacion}), 201
+    # Enviar correo al chofer
+    usuario_chofer = db.session.query(Usuarios).filter_by(id_chofer=id_chofer).first()
+    if usuario_chofer and usuario_chofer.correo:
+        msg = Message(
+            subject="Nueva asignación de unidad",
+            sender="tu-correo@dominio.com",
+            recipients=[usuario_chofer.correo],
+            body=f"Hola {usuario_chofer.nombre},\n\nSe te ha asignado la unidad: {unidad.vehiculo}.\nFecha de asignación: {fecha_asignacion.isoformat()}.\n\nSaludos."
+        )
+        threading.Thread(target=enviar_correo_async, args=(app, msg)).start()
+
+    return jsonify({
+        "message": "Asignación creada y correo enviado con documento",
+        "id_asignacion": nueva.id_asignacion
+    }), 201
 
 @app.route('/asignaciones/<int:id_asignacion>/finalizar', methods=['PUT'])
 def finalizar_asignacion(id_asignacion):
@@ -1029,29 +1421,40 @@ def finalizar_asignacion(id_asignacion):
 def historial():
     historial = HistorialAsignaciones.query.order_by(HistorialAsignaciones.fecha_cambio.desc()).all()
     salida = []
+
     for h in historial:
+        asignacion = Asignaciones.query.get(h.id_asignacion)
+        unidad = Unidades.query.get(asignacion.id_unidad) if asignacion else None
+        chofer = Choferes.query.get(asignacion.id_chofer) if asignacion else None
+
         salida.append({
             "id_historial": h.id_historial,
             "id_asignacion": h.id_asignacion,
-            "id_chofer": h.id_chofer,
+            "id_unidad": unidad.id_unidad if unidad else None,  # <-- ID del vehículo
+            "nombre_unidad": f"{unidad.marca} {unidad.vehiculo} {unidad.modelo}" if unidad else None,
+            "id_chofer": chofer.id_chofer if chofer else None,
+            "nombre_chofer": chofer.nombre if chofer else None,
             "fecha_asignacion": h.fecha_asignacion.isoformat() if h.fecha_asignacion else None,
             "fecha_fin": h.fecha_fin.isoformat() if h.fecha_fin else None,
             "usuario": h.usuario,
             "fecha_cambio": h.fecha_cambio.isoformat()
         })
+
     return jsonify(salida)
+
+
 
 @app.route('/asignaciones', methods=['GET'])
 def listar_asignaciones():
-    asignaciones = Asignaciones.query.order_by(Asignaciones.fecha_asignacion.desc()).all()
+    asignaciones = Asignaciones.query.filter_by(fecha_fin=None).all()  # solo activas
     salida = []
     for a in asignaciones:
         salida.append({
             "id_asignacion": a.id_asignacion,
             "id_chofer": a.id_chofer,
             "id_unidad": a.id_unidad,
-            "fecha_asignacion": a.fecha_asignacion.isoformat(),
-            "fecha_fin": a.fecha_fin.isoformat() if a.fecha_fin else None,
+            "fecha_asignacion": a.fecha_asignacion.isoformat() if a.fecha_asignacion else None,
+            "fecha_fin": a.fecha_fin.isoformat() if a.fecha_fin else None
         })
     return jsonify(salida)
 
@@ -1086,17 +1489,21 @@ def listar_unidad():
 def listar_unidades_libres():
     # Obtener todas las unidades
     todas_unidades = Unidades.query.all()
+
     # Obtener IDs de unidades que ya están asignadas activamente
     asignadas = [a.id_unidad for a in Asignaciones.query.filter_by(fecha_fin=None).all()]
-    
+
+    # Filtrar las que no están asignadas
     unidades_libres = [
         {
             "id_unidad": u.id_unidad,
-            "nombre": u.vehiculo
+            "nombre": f"{u.marca} {u.vehiculo} {u.modelo}"
         }
         for u in todas_unidades if u.id_unidad not in asignadas
     ]
+
     return jsonify(unidades_libres)
+
 
 @app.route('/unidades/chofer/<int:id_usuario>', methods=['GET'])
 def obtener_unidad_por_chofer(id_usuario):
@@ -1143,6 +1550,85 @@ def obtener_unidad_por_chofer(id_usuario):
         print("Error en obtener_unidad_por_chofer:", e)
         return jsonify({'error': 'Error interno del servidor'}), 500
 
+
+@app.route('/chofer/unidad/<int:id_usuario>', methods=['GET'])
+def obtener_datos_chofer_unidad(id_usuario):
+    try:
+        # Obtener el usuario
+        usuario = db.session.get(Usuarios, id_usuario)
+        if not usuario:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+
+        # Obtener el chofer asociado
+        chofer = db.session.get(Choferes, usuario.id_chofer) if usuario.id_chofer else None
+        if not chofer:
+            return jsonify({'error': 'Chofer no encontrado'}), 404
+
+        # Obtener la última asignación activa de unidad
+        asignacion = (
+            Asignaciones.query
+            .filter_by(id_chofer=chofer.id_chofer)
+            .filter((Asignaciones.fecha_fin == None) | (Asignaciones.fecha_fin >= date.today()))
+            .order_by(Asignaciones.fecha_asignacion.desc())
+            .first()
+        )
+
+        if not asignacion:
+            return jsonify({'error': 'No tiene unidad asignada'}), 404
+
+        # Obtener la unidad
+        unidad = db.session.get(Unidades, asignacion.id_unidad)
+        if not unidad:
+            return jsonify({'error': 'Unidad no encontrada'}), 404
+
+        # Usar to_dict() si está disponible y asegurarse de incluir id_unidad
+        unidad_data = unidad.to_dict() if hasattr(unidad, 'to_dict') else {
+            'id_unidad': unidad.id_unidad,
+            'marca': unidad.marca,
+            'vehiculo': unidad.vehiculo,
+            'modelo': unidad.modelo,
+            'color': unidad.color,
+            'kilometraje_actual': unidad.kilometraje_actual,
+            'url_imagen': getattr(unidad, 'url_imagen', None),
+            'url_foto': getattr(unidad, 'url_foto', None),
+        }
+        # Aseguramos que exista la clave id_unidad (por si to_dict no la incluye)
+        unidad_data['id_unidad'] = unidad.id_unidad
+
+        # Preparar la respuesta completa
+        response = {
+            "usuario": {
+                "id_usuario": usuario.id_usuario,
+                "nombre": usuario.nombre,
+                "usuario": usuario.usuario,
+                "correo": usuario.correo,
+                "rol": usuario.rol,
+                "estado": usuario.estado,
+                "fecha_registro": str(usuario.fecha_registro),
+                "fecha_ultimo_login": str(usuario.fecha_ultimo_login) if usuario.fecha_ultimo_login else None,
+            },
+            "chofer": {
+                "id_chofer": chofer.id_chofer,
+                "nombre": chofer.nombre,
+                "curp": chofer.curp,
+                "calle": chofer.calle,
+                "colonia_localidad": chofer.colonia_localidad,
+                "codpos": chofer.codpos,
+                "municipio": chofer.municipio,
+                "licencia_folio": chofer.licencia_folio,
+                "licencia_tipo": chofer.licencia_tipo,
+                "licencia_vigencia": str(chofer.licencia_vigencia) if chofer.licencia_vigencia else None
+            },
+            "unidad": unidad_data
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        print("Error en obtener_datos_chofer_unidad:", e)
+        return jsonify({'error': 'Error interno del servidor'}), 500
+
+
 # =======================
 #GARANTIAS - OBTENER DATOS
 # =======================
@@ -1152,6 +1638,14 @@ def obtener_garantias():
     cursor = None
     try:
         cursor = conn.cursor()
+
+        # Obtener filtros desde query params
+        unidad = request.args.get('unidad')
+        chofer = request.args.get('chofer')
+        aseguradora = request.args.get('aseguradora')
+        tipo_garantia = request.args.get('tipo_garantia')
+
+        # Base query
         query = """
             SELECT 
                 g.id_garantia,
@@ -1166,7 +1660,9 @@ def obtener_garantias():
                 g.suma_asegurada,
                 g.inicio_vigencia,
                 g.vigencia,
-                g.prima
+                g.prima,
+                g.telefono_fijo,
+                g.telefono_celular
             FROM Garantias g
             JOIN Unidades u ON g.id_unidad = u.id_unidad
             LEFT JOIN (
@@ -1175,17 +1671,36 @@ def obtener_garantias():
                 WHERE fecha_fin IS NULL
             ) A ON u.id_unidad = A.id_unidad
             LEFT JOIN Choferes C ON A.id_chofer = C.id_chofer
-            ORDER BY u.id_unidad, g.id_garantia;
+            WHERE 1=1
         """
 
-        cursor.execute(query)
+
+        # Lista de parámetros para query parametrizada
+        params = []
+
+        if unidad:
+            query += " AND g.id_unidad = %s"
+            params.append(unidad)
+        if chofer:
+            query += " AND C.nombre LIKE %s"
+            params.append(f"%{chofer}%")
+        if aseguradora:
+            query += " AND g.aseguradora LIKE %s"
+            params.append(f"%{aseguradora}%")
+        if tipo_garantia:
+            query += " AND g.tipo_garantia LIKE %s"
+            params.append(f"%{tipo_garantia}%")
+
+        query += " ORDER BY u.id_unidad, g.id_garantia;"
+
+        # Ejecutar query con parámetros
+        cursor.execute(query, params)
         garantias = cursor.fetchall()
         columnas = [desc[0] for desc in cursor.description]
         resultados = []
 
         for fila in garantias:
             fila_dict = dict(zip(columnas, fila))
-            # Convertir fechas a formato YYYY-MM-DD para inputs tipo date
             for campo in ['inicio_vigencia', 'vigencia']:
                 if fila_dict[campo]:
                     fila_dict[campo] = fila_dict[campo].strftime('%Y-%m-%d')
@@ -1205,9 +1720,7 @@ def obtener_garantias():
         if conn:
             conn.close()
 
-
-
-ALLOWED_EXTENSIONS = {'pdf'}
+ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png', 'webp'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -1226,20 +1739,32 @@ def crear_garantia():
     archivo = request.files.get('archivo')
 
     if not archivo or archivo.filename == '':
-        return jsonify({"error": "Debe subir un archivo PDF"}), 400
+        return jsonify({"error": "Debe subir un archivo"}), 400
     if not allowed_file(archivo.filename):
-        return jsonify({"error": "Solo se permiten archivos PDF"}), 400
+        return jsonify({"error": "Solo se permiten archivos PDF o imágenes"}), 400
 
     id_unidad = data.get('id_unidad')
     if not id_unidad:
         return jsonify({"error": "Debe especificar una unidad"}), 400
 
+    # ------------------- Recibir teléfonos -------------------
+    telefono_fijo = data.get('telefono_fijo')
+    telefono_celular = data.get('telefono_celular')
+    # ---------------------------------------------------------
+
     garantia = Garantias.query.filter_by(id_unidad=id_unidad).first()
 
-    filename = secure_filename(f"{id_unidad}_{date.today()}.pdf")
+    # Generar nombre de archivo único con fecha y hora
+    ahora = datetime.now()
+    timestamp = ahora.strftime("%Y-%m-%d_%H-%M-%S")  # YYYY-MM-DD_HH-MM-SS
+    ext = os.path.splitext(archivo.filename)[1].lower()
+    filename = secure_filename(f"{id_unidad}_{timestamp}{ext}")
+
     ruta_guardado_abs = os.path.join(ruta_upload_abs, filename)
     archivo.save(ruta_guardado_abs)
-    ruta_pdf = os.path.join(UPLOAD_FOLDER, filename).replace("\\", "/")
+
+    # Ruta relativa para DB/frontend
+    ruta_archivo = "/" + os.path.join(UPLOAD_FOLDER, filename).replace("\\", "/")
 
     try:
         def mover_a_historial(ruta_relativa):
@@ -1250,7 +1775,7 @@ def crear_garantia():
                 nombre = os.path.basename(ruta_abs)
                 nueva_ruta_abs = os.path.join(ruta_historial_abs, nombre)
                 shutil.move(ruta_abs, nueva_ruta_abs)
-                return os.path.join(HISTORIAL_FOLDER, nombre).replace("\\", "/")
+                return "/" + os.path.join(HISTORIAL_FOLDER, nombre).replace("\\", "/")
             return ruta_relativa
 
         hoy = date.today()
@@ -1258,10 +1783,9 @@ def crear_garantia():
 
         if garantia and garantia.vigencia:
             fecha_pre_renovacion = garantia.vigencia - timedelta(days=30)
-            # Puede renovar si ya venció o estamos dentro del mes previo
             puede_renovar = hoy >= fecha_pre_renovacion
 
-        # Caso: garantía existente y permite renovación
+        # ---------------- Garantía existente y puede renovarse ----------------
         if garantia and puede_renovar:
             url_historial = mover_a_historial(garantia.url_poliza)
 
@@ -1277,7 +1801,10 @@ def crear_garantia():
                 inicio_vigencia=garantia.inicio_vigencia,
                 vigencia=garantia.vigencia,
                 prima=garantia.prima,
-                usuario=data.get('usuario', 'sistema')
+                usuario=data.get('usuario', 'sistema'),
+                # ---------------- Guardar teléfonos en historial ----------------
+                telefono_fijo=garantia.telefono_fijo,
+                telefono_celular=garantia.telefono_celular
             )
             db.session.add(historial)
 
@@ -1285,30 +1812,35 @@ def crear_garantia():
             garantia.aseguradora = data.get('aseguradora')
             garantia.tipo_garantia = data.get('tipo_garantia')
             garantia.no_poliza = data.get('no_poliza')
-            garantia.url_poliza = ruta_pdf
+            garantia.url_poliza = ruta_archivo
             garantia.suma_asegurada = data.get('suma_asegurada')
             garantia.inicio_vigencia = data.get('inicio_vigencia')
             garantia.vigencia = data.get('vigencia')
             garantia.prima = data.get('prima')
+            # ---------------- Guardar teléfonos en la garantía actual ----------------
+            garantia.telefono_fijo = telefono_fijo
+            garantia.telefono_celular = telefono_celular
             print("Garantía actualizada y enviada a historial (vencida o pre-renovación)")
 
-        # Caso: no hay garantía previa → crear nueva
+        # ---------------- Crear nueva garantía ----------------
         elif not garantia:
             nueva = Garantias(
                 id_unidad=id_unidad,
                 aseguradora=data.get('aseguradora'),
                 tipo_garantia=data.get('tipo_garantia'),
                 no_poliza=data.get('no_poliza'),
-                url_poliza=ruta_pdf,
+                url_poliza=ruta_archivo,
                 suma_asegurada=data.get('suma_asegurada'),
                 inicio_vigencia=data.get('inicio_vigencia'),
                 vigencia=data.get('vigencia'),
-                prima=data.get('prima')
+                prima=data.get('prima'),
+                # ---------------- Guardar teléfonos ----------------
+                telefono_fijo=telefono_fijo,
+                telefono_celular=telefono_celular
             )
             db.session.add(nueva)
             print("Nueva garantía creada")
 
-        # Caso: aún vigente y fuera del mes previo
         else:
             return jsonify({"error": "La garantía aún está vigente y no puede registrarse una nueva."}), 400
 
@@ -1330,8 +1862,8 @@ def actualizar_garantia(id_garantia):
     UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads', 'garantias')
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-    ALLOWED_EXTENSIONS = {'pdf'}
 
+    ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png', 'webp'}
     def allowed_file(filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -1342,49 +1874,36 @@ def actualizar_garantia(id_garantia):
     cursor = conn.cursor()
 
     try:
-        # Validar existencia de la garantía
         cursor.execute(
             "SELECT id_garantia, url_poliza FROM Garantias WHERE id_garantia = %s",
             (id_garantia,)
         )
         garantia_existente = cursor.fetchone()
         if not garantia_existente:
-            print(f"⚠️ Garantía {id_garantia} no encontrada")
             return jsonify({"error": "La garantía no existe"}), 404
-        print(f"✅ Garantía encontrada: {garantia_existente}")
 
-        # Validar unidad
         id_unidad = data.get('id_unidad')
         cursor.execute("SELECT id_unidad FROM Unidades WHERE id_unidad = %s", (id_unidad,))
         if not cursor.fetchone():
-            print(f"⚠️ Unidad {id_unidad} no encontrada")
             return jsonify({"error": "La unidad indicada no existe"}), 400
-        print(f"✅ Unidad válida: {id_unidad}")
 
-        # URL actual del archivo
         url_poliza = garantia_existente[1]
-        print(f"Archivo actual: {url_poliza}")
 
-        # Guardar archivo nuevo si se envió
         if archivo and allowed_file(archivo.filename):
             if url_poliza:
                 ruta_antigua = os.path.join(app.root_path, url_poliza.lstrip("/").replace("/", os.sep))
                 if os.path.exists(ruta_antigua):
                     os.remove(ruta_antigua)
-                    print(f"🗑 Archivo antiguo eliminado: {ruta_antigua}")
 
             ext = archivo.filename.rsplit('.', 1)[1].lower()
             filename = f"{data.get('no_poliza')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}"
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             archivo.save(filepath)
             url_poliza = f"/uploads/garantias/{filename}"
-            print(f"📁 Archivo nuevo guardado: {url_poliza}")
 
-        # Conversión segura de campos numéricos
         suma_asegurada = float(data.get('suma_asegurada') or 0)
         prima = float(data.get('prima') or 0)
 
-        # Actualización
         query = """
             UPDATE Garantias SET
                 id_unidad = %s,
@@ -1395,7 +1914,9 @@ def actualizar_garantia(id_garantia):
                 inicio_vigencia = %s,
                 vigencia = %s,
                 prima = %s,
-                url_poliza = %s
+                url_poliza = %s,
+                telefono_fijo = %s,
+                telefono_celular = %s
             WHERE id_garantia = %s
         """
         params = (
@@ -1408,20 +1929,19 @@ def actualizar_garantia(id_garantia):
             data.get('vigencia'),
             prima,
             url_poliza,
+            data.get('telefono_fijo'),      # nuevo
+            data.get('telefono_celular'),    # nuevo
             id_garantia
         )
         cursor.execute(query, params)
         conn.commit()
 
-        print(f"✅ Garantía {id_garantia} actualizada correctamente")
         return jsonify({"message": "Garantía actualizada correctamente", "url_poliza": url_poliza}), 200
 
     except Exception as e:
         conn.rollback()
         import traceback; traceback.print_exc()
-        error_message = f"❌ Error al actualizar la garantía: {str(e)}"
-        print(error_message)
-        return jsonify({"error": error_message}), 500
+        return jsonify({"error": str(e)}), 500
 
     finally:
         cursor.close()
@@ -1448,7 +1968,10 @@ def verificar_garantia(id_unidad):
             "suma_asegurada": garantia.suma_asegurada,
             "inicio_vigencia": garantia.inicio_vigencia.isoformat() if garantia.inicio_vigencia else None,
             "vigencia": garantia.vigencia.isoformat() if garantia.vigencia else None,
-            "prima": garantia.prima
+            "prima": garantia.prima,
+            "telefono_fijo": garantia.telefono_fijo,
+            "telefono_celular": garantia.telefono_celular
+
         }
 
     return jsonify({
@@ -1526,7 +2049,40 @@ def descargar_archivo(filename):
         as_attachment=True
     )
 
+#hitorial de garantias
+@app.route('/api/historial_garantias', methods=['GET'])
+def get_historial_garantias():
+    """
+    Obtiene todos los registros de la tabla HistorialGarantias
+    junto con los datos de la unidad (marca, tipo) si están relacionados.
+    """
+    try:
+        # Si tienes relación con Unidades, puedes hacer join; si no, omite el join.
+        historial = HistorialGarantias.query.all()
 
+        resultado = []
+        for h in historial:
+            resultado.append({
+                "id_historial": h.id_historial,
+                "id_garantia": h.id_garantia,
+                "id_unidad": h.id_unidad,
+                "fecha_cambio": h.fecha_cambio.strftime("%Y-%m-%d %H:%M:%S") if h.fecha_cambio else None,
+                "aseguradora": h.aseguradora,
+                "tipo_garantia": h.tipo_garantia,
+                "no_poliza": h.no_poliza,
+                "url_poliza": h.url_poliza,
+                "telefono_fijo": h.telefono_fijo,
+                "telefono_celular": h.telefono_celular,
+                "suma_asegurada": str(h.suma_asegurada),
+                "inicio_vigencia": h.inicio_vigencia.strftime("%Y-%m-%d") if h.inicio_vigencia else None,
+                "vigencia": h.vigencia.strftime("%Y-%m-%d") if h.vigencia else None,
+                "prima": str(h.prima),
+                "usuario": h.usuario
+            })
+
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -1663,9 +2219,13 @@ def crear_verificacion():
     print("Archivo recibido:", archivo.filename if archivo else "No hay archivo")
 
     if not archivo or archivo.filename == '':
-        return jsonify({"error": "Debe subir un archivo PDF"}), 400
-    if not allowed_file(archivo.filename):
-        return jsonify({"error": "Solo se permiten archivos PDF"}), 400
+        return jsonify({"error": "Debe subir un archivo"}), 400
+
+    # Permitir PDF e imágenes
+    ext = os.path.splitext(archivo.filename)[1].lower()
+    permitidos = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+    if ext not in permitidos:
+        return jsonify({"error": "Solo se permiten archivos PDF o imágenes"}), 400
 
     unidad = Unidades.query.filter_by(id_unidad=data['id_unidad']).first()
     if not unidad:
@@ -1687,19 +2247,19 @@ def crear_verificacion():
     fecha_real = datetime.strptime(data[f'periodo_{periodo}_real'], "%Y-%m-%d").date()
     print(f"Periodo: {periodo}, Fecha sugerida: {fecha_sugerida}, Fecha real: {fecha_real}")
 
-    filename = secure_filename(f"{data['id_unidad']}_{periodo}_{date.today()}.pdf")
+    filename = secure_filename(f"{data['id_unidad']}_{periodo}_{date.today()}{ext}")
     ruta_guardado_abs = os.path.join(ruta_upload_abs, filename)
     archivo.save(ruta_guardado_abs)
-    ruta_pdf = os.path.join(UPLOAD_FOLDER, filename).replace("\\", "/")
+    ruta_archivo = os.path.join(UPLOAD_FOLDER, filename).replace("\\", "/")
     print(f"Archivo guardado en: {ruta_guardado_abs}")
-    print(f"Ruta relativa para DB/frontend: {ruta_pdf}")
+    print(f"Ruta relativa para DB/frontend: {ruta_archivo}")
 
     existing = VerificacionVehicular.query.filter_by(id_unidad=data['id_unidad']).first()
     print("Verificación existente:", existing)
 
     try:
         def mover_a_historial(ruta_relativa):
-            if not ruta_relativa or ruta_relativa == ruta_pdf:
+            if not ruta_relativa or ruta_relativa == ruta_archivo:
                 print(f"No se mueve (nuevo o vacío): {ruta_relativa}")
                 return ruta_relativa
             ruta_abs = os.path.join(current_app.root_path, ruta_relativa.lstrip("/").replace("/", os.sep))
@@ -1757,17 +2317,35 @@ def crear_verificacion():
             if periodo == '1':
                 existing.periodo_1 = fecha_sugerida
                 existing.periodo_1_real = fecha_real
-                existing.url_verificacion_1 = ruta_pdf
+                existing.url_verificacion_1 = ruta_archivo
             else:
                 existing.periodo_2 = fecha_sugerida
                 existing.periodo_2_real = fecha_real
-                existing.url_verificacion_2 = ruta_pdf
+                existing.url_verificacion_2 = ruta_archivo
 
             existing.ultima_verificacion = fecha_real
             existing.holograma = holograma
             existing.folio_verificacion = data.get('folio_verificacion', '')
             existing.engomado = engomado
-            print("Verificación existente actualizada con nuevo PDF")
+            print("Verificación existente actualizada con nuevo archivo")
+
+            # --- MARCAR ALERTAS EXISTENTES COMO COMPLETADAS ---
+            try:
+                alertas_pendientes = Alerta.query.filter_by(
+                    id_unidad=data['id_unidad'],
+                    tipo_alerta='verificacion',
+                    estado='pendiente'
+                ).all()
+
+                for alerta in alertas_pendientes:
+                    alerta.estado = 'completada'
+                    alerta.fecha_completada = datetime.now()
+
+                if alertas_pendientes:
+                    print(f"✅ {len(alertas_pendientes)} alertas de verificación existentes marcadas como completadas")
+            except Exception as e:
+                print("⚠️ Error al marcar alertas como completadas:", e)
+
         else:
             nueva = VerificacionVehicular(
                 id_unidad=data['id_unidad'],
@@ -1776,8 +2354,8 @@ def crear_verificacion():
                 periodo_1_real=fecha_real if periodo == '1' else None,
                 periodo_2=fecha_sugerida if periodo == '2' else None,
                 periodo_2_real=fecha_real if periodo == '2' else None,
-                url_verificacion_1=ruta_pdf if periodo == '1' else None,
-                url_verificacion_2=ruta_pdf if periodo == '2' else None,
+                url_verificacion_1=ruta_archivo if periodo == '1' else None,
+                url_verificacion_2=ruta_archivo if periodo == '2' else None,
                 holograma=holograma,
                 folio_verificacion=data.get('folio_verificacion', ''),
                 engomado=engomado
@@ -1793,6 +2371,73 @@ def crear_verificacion():
         db.session.rollback()
         import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/verificaciones/<int:id_verificacion>', methods=['DELETE'])
+def eliminar_verificacion(id_verificacion):
+    UPLOAD_FOLDER = 'uploads/verificaciones'
+    HISTORIAL_FOLDER = 'uploads/historial_verificaciones'
+
+    ruta_upload_abs = os.path.join(current_app.root_path, UPLOAD_FOLDER)
+    ruta_historial_abs = os.path.join(current_app.root_path, HISTORIAL_FOLDER)
+    os.makedirs(ruta_upload_abs, exist_ok=True)
+    os.makedirs(ruta_historial_abs, exist_ok=True)
+
+    verificacion = VerificacionVehicular.query.get(id_verificacion)
+    if not verificacion:
+        print(f"Verificación con id {id_verificacion} no encontrada")
+        return jsonify({"error": "Verificación no encontrada"}), 404
+
+    print(f"=== Eliminando verificación ID {verificacion.id_verificacion} ===")
+    print(f"Unidad: {verificacion.id_unidad}, Última verificación: {verificacion.ultima_verificacion}")
+    print(f"Periodo 1: {verificacion.periodo_1}, URL: {verificacion.url_verificacion_1}")
+    print(f"Periodo 2: {verificacion.periodo_2}, URL: {verificacion.url_verificacion_2}")
+    print(f"Holograma: {verificacion.holograma}, Folio: {verificacion.folio_verificacion}, Engomado: {verificacion.engomado}")
+
+    # Función para mover archivos
+    def mover_archivo_a_historial(url_relativa):
+        if not url_relativa:
+            print("No hay archivo para mover")
+            return None
+        ruta_abs = os.path.join(current_app.root_path, url_relativa.lstrip("/").replace("/", os.sep))
+        if os.path.exists(ruta_abs):
+            nombre = os.path.basename(ruta_abs)
+            nueva_ruta_abs = os.path.join(ruta_historial_abs, nombre)
+            shutil.move(ruta_abs, nueva_ruta_abs)
+            print(f"Archivo movido a historial: {nueva_ruta_abs}")
+            return os.path.join(HISTORIAL_FOLDER, nombre).replace("\\", "/")
+        print(f"Archivo no encontrado para mover: {ruta_abs}")
+        return url_relativa
+
+    url_v1 = mover_archivo_a_historial(verificacion.url_verificacion_1)
+    url_v2 = mover_archivo_a_historial(verificacion.url_verificacion_2)
+
+    historial = HistorialVerificacionVehicular(
+        id_verificacion=verificacion.id_verificacion,
+        id_unidad=verificacion.id_unidad,
+        fecha_cambio=datetime.now(),
+        ultima_verificacion=verificacion.ultima_verificacion,
+        periodo_1=verificacion.periodo_1,
+        periodo_1_real=verificacion.periodo_1_real,
+        url_verificacion_1=url_v1,
+        periodo_2=verificacion.periodo_2,
+        periodo_2_real=verificacion.periodo_2_real,
+        url_verificacion_2=url_v2,
+        holograma=verificacion.holograma,
+        folio_verificacion=verificacion.folio_verificacion,
+        engomado=verificacion.engomado,
+        usuario="sistema"
+    )
+
+    db.session.add(historial)
+    print("Registro agregado al historial")
+
+    # Borrar verificación original
+    db.session.delete(verificacion)
+    db.session.commit()
+    print(f"Verificación ID {id_verificacion} eliminada y commit realizado")
+
+    return jsonify({"message": "Verificación eliminada y enviada a historial"}), 200
+
 
 @app.route('/api/calendario', methods=['GET'])
 def obtener_calendario():
@@ -1817,59 +2462,121 @@ def actualizar_calendario():
     return jsonify({"status": "ok"})
 
 
-#--------------------------------------------------------------------------------------------
+#====================================================
 
-#calculo de verificaciones
+#calculo de verificaciones refrendo
+#========================================================
+import calendar
+from datetime import timedelta
 
 def calcular_siguiente_verificacion(fecha_real, holograma, engomado):
+    print("----------------------------------------------------")
+    print("CÁLCULO DE VERIFICACIÓN")
+    print(f"Fecha real: {fecha_real}")
+    print(f"Holograma: {holograma}")
+    print(f"Engomado: {engomado}")
+    print("----------------------------------------------------")
+
     if not fecha_real:
+        print("SIN FECHA REAL → SE REGRESA None")
         return None
 
-    # Holograma "00" → 2 años después
-    if holograma == "00":
-        return fecha_real.replace(year=fecha_real.year + 2)
+    engomado = engomado.strip().lower()
+    holograma = holograma.strip()
 
-    # Holograma "0" → 6 meses después
+    print(f"Engomado normalizado: {engomado}")
+    print(f"Holograma normalizado: {holograma}")
+
+    # HOLOGRAMA 00
+    if holograma == "00":
+        print("Regla: HOLOGRAMA 00 → +2 AÑOS")
+        try:
+            resultado = fecha_real.replace(year=fecha_real.year + 2)
+            print(f"Resultado: {resultado}")
+            return resultado
+        except ValueError:
+            ultimo_dia = calendar.monthrange(fecha_real.year + 2, fecha_real.month)[1]
+            resultado = fecha_real.replace(year=fecha_real.year + 2, day=ultimo_dia)
+            print(f"Resultado ajustado: {resultado}")
+            return resultado
+
+    # HOLOGRAMA 0
     if holograma == "0":
+        print("Regla: HOLOGRAMA 0 → +6 MESES")
         mes_siguiente = fecha_real.month + 6
         año = fecha_real.year
         if mes_siguiente > 12:
             mes_siguiente -= 12
             año += 1
-        ultimo_dia = calendar.monthrange(año, mes_siguiente)[1]
-        return fecha_real.replace(year=año, month=mes_siguiente, day=ultimo_dia)
 
-    # Hologramas normales según engomado y semestre
+        ultimo_dia = calendar.monthrange(año, mes_siguiente)[1]
+        dia = min(fecha_real.day, ultimo_dia)
+
+        resultado = fecha_real.replace(year=año, month=mes_siguiente, day=dia)
+        print(f"Resultado: {resultado}")
+        return resultado
+
+    # HOLOGRAMAS 1 Y 2 (NORMA POR ENGOMADO)
+    print("Regla: HOLOGRAMAS 1/2 → POR ENGOMADO")
+
     MESES_ENGOMADO = {
-        "primer_semestre": {"amarillo":[1,2],"rosa":[2,3],"rojo":[3,4],"verde":[4,5],"azul":[5,6]},
-        "segundo_semestre": {"amarillo":[7,8],"rosa":[8,9],"rojo":[9,10],"verde":[10,11],"azul":[11,12]}
+        "primer_semestre": {
+            "amarillo": [1, 2],
+            "rosa": [2, 3],
+            "rojo": [3, 4],
+            "verde": [4, 5],
+            "azul": [5, 6],
+        },
+        "segundo_semestre": {
+            "amarillo": [7, 8],
+            "rosa": [8, 9],
+            "rojo": [9, 10],
+            "verde": [10, 11],
+            "azul": [11, 12],
+        }
     }
 
     mes_actual = fecha_real.month
     semestre = "primer_semestre" if mes_actual <= 6 else "segundo_semestre"
-    meses_posibles = MESES_ENGOMADO[semestre].get(engomado.lower(), [])
+
+    print(f"Mes actual: {mes_actual}")
+    print(f"Semestre detectado: {semestre}")
+
+    meses_posibles = MESES_ENGOMADO.get(semestre, {}).get(engomado, [])
+    print(f"Meses posibles por engomado: {meses_posibles}")
 
     if not meses_posibles:
-        # fallback: 6 meses después
-        nueva_fecha = fecha_real + timedelta(days=182)
-        return nueva_fecha
+        print("NO HAY MESES POSIBLES → FALLBACK +182 días")
+        resultado = fecha_real + timedelta(days=182)
+        print(f"Resultado: {resultado}")
+        return resultado
 
-    # Tomar primer mes >= mes_actual
-    for m in meses_posibles:
-        if m >= mes_actual:
-            mes_siguiente = m
+    # Buscar primer mes válido
+    for mes in meses_posibles:
+        if mes >= mes_actual:
+            mes_siguiente = mes
+            print(f"Primer mes válido encontrado: {mes_siguiente}")
             break
     else:
-        # Si ya pasaron todos los meses del semestre → primer mes del semestre siguiente
-        semestre_siguiente = "segundo_semestre" if semestre == "primer_semestre" else "primer_semestre"
-        mes_siguiente = MESES_ENGOMADO[semestre_siguiente].get(engomado.lower(), [mes_actual + 6])[0]
+        print("No hay mes válido en este semestre → siguiente semestre")
+        semestre_siguiente = (
+            "segundo_semestre" if semestre == "primer_semestre" else "primer_semestre"
+        )
+        mes_siguiente = MESES_ENGOMADO[semestre_siguiente][engomado][0]
+        print(f"Mes del siguiente semestre: {mes_siguiente}")
 
-    # Ajustar año si se pasa de diciembre
     año = fecha_real.year + (1 if mes_siguiente < mes_actual else 0)
     ultimo_dia = calendar.monthrange(año, mes_siguiente)[1]
+    dia = min(fecha_real.day, ultimo_dia)
 
-    return fecha_real.replace(year=año, month=mes_siguiente, day=ultimo_dia)
+    resultado = fecha_real.replace(year=año, month=mes_siguiente, day=dia)
 
+    print(f"Año asignado: {año}")
+    print(f"Día ajustado: {dia}")
+    print(f"Resultado final: {resultado}")
+    print("----------------------------------------------------")
+
+    return resultado
 
 # Endpoint: obtener verificación por placa
 @app.route('/api/verificacion-placa/<string:placa>', methods=['GET'])
@@ -2022,34 +2729,192 @@ def obtener_historial_verificaciones():
             "detalles": str(e)
         }), 500
 
+#================================================================
+#Alertas de verificacion vehicular
+#================================================================
+
+def enviar_alertas_verificacion():
+    print("📌 Iniciando envío de alertas de verificación")
+    hoy = date.today()
+    anticipacion = timedelta(days=60)  # 2 meses antes
+
+    # --- 1. Traer todas las verificaciones ---
+    verificaciones = VerificacionVehicular.query.all()
+    print(f"Total verificaciones encontradas: {len(verificaciones)}")
+
+    proximas_alertas = []
+
+    for v in verificaciones:
+        if not v.ultima_verificacion:
+            continue
+
+        fecha_siguiente = calcular_siguiente_verificacion(
+            v.ultima_verificacion,
+            v.holograma,
+            v.engomado
+        )
+
+        if not fecha_siguiente:
+            continue
+
+        # Guardar fecha siguiente en la verificación (opcional)
+        v.proxima_verificacion = fecha_siguiente  # Si agregas este campo en el modelo
+        # db.session.commit()  # Mejor hacerlo al final
+
+        if hoy + anticipacion >= fecha_siguiente:
+            proximas_alertas.append((v, fecha_siguiente))
+
+    print(f"Verificaciones próximas (alerta): {len(proximas_alertas)}")
+    if not proximas_alertas:
+        print("❌ No hay verificaciones próximas")
+        return
+
+    # --- 2. Administradores ---
+    admins = Usuarios.query.filter_by(rol='admin').all()
+    emails_admin = [a.correo for a in admins if a.correo]
+    print(f"Administradores con correo: {emails_admin}")
+
+    if emails_admin:
+        lista_admin_html = "".join([
+            f"<li>Unidad: <strong>{v.unidad.id_unidad}</strong> | "
+            f"Próxima verificación: {fecha} | "
+            f"Holograma: {v.holograma} | Engomado: {v.engomado}</li>"
+            for v, fecha in proximas_alertas
+        ])
+        cuerpo_admin = f"<html><body><h2>Vehículos próximos a verificación</h2><ul>{lista_admin_html}</ul></body></html>"
+        msg_admin = Message(
+            subject="Listado de vehículos próximos a verificación",
+            recipients=emails_admin,
+            html=cuerpo_admin
+        )
+        mail.send(msg_admin)
+        print(f"✅ Correos enviados a administradores: {emails_admin}")
+
+        # Crear alertas en BD para admins
+        for v, fecha in proximas_alertas:
+            alerta = Alerta(
+                id_unidad=v.id_unidad,
+                tipo_alerta="verificacion",
+                descripcion=f"Unidad {v.unidad.id_unidad} requiere verificación antes del {fecha}",
+                estado="pendiente",
+                detalle={
+                    "rol": "admin",
+                    "holograma": v.holograma,
+                    "engomado": v.engomado
+                }
+            )
+            db.session.add(alerta)
 
 
-# =======================
+    # --- 3. Choferes ---
+    choferes = Usuarios.query.filter_by(rol='chofer').all()
+    for user in choferes:
+        if not user.correo:
+            continue
+
+        # Vehículos asignados al chofer
+        asignaciones_activas = Asignaciones.query.filter(
+            Asignaciones.id_chofer == user.id_chofer,
+            (Asignaciones.fecha_fin == None) | (Asignaciones.fecha_fin >= hoy)
+        ).all()
+        unidades_usuario = [a.id_unidad for a in asignaciones_activas]
+
+        vehiculos_usuario = [(v, fecha) for v, fecha in proximas_alertas if v.id_unidad in unidades_usuario]
+
+        if not vehiculos_usuario:
+            continue
+
+        lista_usuario_html = "".join([
+            f"<li>Unidad: <strong>{v.unidad.id_unidad}</strong> | "
+            f"Próxima verificación: {fecha} | "
+            f"Holograma: {v.holograma} | Engomado: {v.engomado}</li>"
+            for v, fecha in vehiculos_usuario
+        ])
+        cuerpo_usuario = f"<html><body><h2>Vehículos de sus unidades próximos a verificación</h2><ul>{lista_usuario_html}</ul></body></html>"
+        msg_usuario = Message(
+            subject="Próxima verificación de sus unidades",
+            recipients=[user.correo],
+            html=cuerpo_usuario
+        )
+        mail.send(msg_usuario)
+        print(f"✅ Correo enviado a chofer {user.id_chofer} - {user.correo}")
+
+        # Crear alertas en BD para chofer
+        for v, fecha in vehiculos_usuario:
+            alerta = Alerta(
+                id_unidad=v.id_unidad,
+                tipo_alerta="verificacion",
+                descripcion=f"Su unidad {v.unidad.id_unidad} requiere verificación antes del {fecha}",
+                estado="pendiente",
+                detalle={
+                    "rol": "chofer",
+                    "id_chofer": user.id_chofer,
+                    "holograma": v.holograma,
+                    "engomado": v.engomado
+                }
+            )
+            db.session.add(alerta)
+
+
+    # Commit final para todas las alertas
+    db.session.commit()
+    print("✅ Envío de alertas de verificación completado")
+
+# ---------------------------
+# Scheduler diario
+# ---------------------------
+scheduler = BackgroundScheduler()
+
+def job_envio_alertas_verificacion():
+    with app.app_context():  # Contexto de Flask activo
+        print("📌 Iniciando envío de alertas")
+        try:
+            enviar_alertas_verificacion()
+            print("✅ Alertas enviadas correctamente")
+        except Exception as e:
+            print(f"❌ Error al enviar alertas: {e}")
+
+# Ejecutar cada 100 segundos
+scheduler.add_job(job_envio_alertas_verificacion, 'interval', seconds=45060)
+scheduler.start()
+
+
+
+
+# ===============================================================================================
+# SOLICITUDES DE FALLA MECÁNICA
+# ===============================================================================================
 
 @app.route('/solicitudes/chofer/<int:id_chofer>', methods=['GET'])
 def solicitudes_chofer(id_chofer):
-    # Trae todas las solicitudes del chofer
     solicitudes = SolicitudFalla.query.filter_by(id_chofer=id_chofer).all()
     resultado = []
     for s in solicitudes:
-        # Verifica si ya hay falla asociada
         falla_existente = FallaMecanica.query.filter_by(
             id_unidad=s.id_unidad,
             id_pieza=s.id_pieza,
             tipo_servicio=s.tipo_servicio
         ).first()
+
+        # Consultar nombres
+        unidad = Unidades.query.get(s.id_unidad)
+        pieza = Piezas.query.get(s.id_pieza)
+        marca = MarcasPiezas.query.get(s.id_marca)
+
         resultado.append({
             "id_solicitud": s.id_solicitud,
-            "unidad": s.id_unidad,
-            "pieza": s.id_pieza,
-            "marca": s.id_marca,
+            "id_unidad": s.id_unidad,
+            "unidad": unidad.vehiculo if unidad else "No especificada",
+            "id_pieza": s.id_pieza,
+            "pieza": pieza.nombre_pieza if pieza else "No especificada",
+            "id_marca": s.id_marca,
+            "marca": marca.nombre_marca if marca else "No especificada",
             "tipo_servicio": s.tipo_servicio,
             "descripcion": s.descripcion,
             "estado": s.estado,
             "completada": True if falla_existente else False
         })
     return jsonify(resultado)
-
 
 # -------------------------------
 # Crear solicitud de falla (CHOFER)
@@ -2075,22 +2940,33 @@ def crear_solicitud():
 # -------------------------------
 @app.route('/solicitudes', methods=['GET'])
 def listar_todas_solicitudes():
-    # Trae todas las solicitudes, ordenadas de más recientes a más antiguas
     solicitudes = SolicitudFalla.query.order_by(SolicitudFalla.fecha_solicitud.desc()).all()
     resultado = []
+
     for s in solicitudes:
+        unidad = db.session.get(Unidades, s.id_unidad)
+        pieza = db.session.get(Piezas, s.id_pieza)
+        marca = db.session.get(MarcasPiezas, s.id_marca)
+        chofer = db.session.get(Usuarios, s.id_chofer)  # obtenemos el chofer
+
         resultado.append({
             "id_solicitud": s.id_solicitud,
-            "unidad": s.id_unidad,
-            "pieza": s.id_pieza,
-            "marca": s.id_marca,
+            "id_unidad": s.id_unidad,
+            "unidad": unidad.vehiculo if unidad else "No especificada",
+            "id_pieza": s.id_pieza,
+            "pieza": pieza.nombre_pieza if pieza else "No especificada",
+            "id_marca": s.id_marca,
+            "marca": marca.nombre_marca if marca else "No especificada",
             "tipo_servicio": s.tipo_servicio,
             "descripcion": s.descripcion,
-            "estado": s.estado,  # añade estado para que se vea aprobado/pendiente/rechazado
+            "estado": s.estado,
             "id_chofer": s.id_chofer,
+            "chofer": {"nombre": chofer.nombre} if chofer else None,
             "fecha_solicitud": s.fecha_solicitud.isoformat()
         })
+
     return jsonify(resultado)
+
 
 # -------------------------------
 # Aprobar o rechazar solicitud (ADMIN)
@@ -2469,6 +3345,208 @@ def eliminar_falla(id_falla):
 
 
 
+# -------------------------------
+# Crear mensaje para una solicitud
+# -------------------------------
+@app.route('/solicitudes_mensajes', methods=['POST'])
+def crear_mensaje_solicitud():
+    """
+    Espera JSON: { id_solicitud, id_usuario, mensaje }
+    """
+    data = request.json
+    id_solicitud = data.get('id_solicitud')
+    id_usuario = data.get('id_usuario')
+    mensaje = data.get('mensaje')
+
+    print("Datos recibidos:", data)
+
+    if not id_solicitud or not id_usuario or not mensaje:
+        print("Error: faltan datos")
+        return jsonify({"msg": "Faltan datos"}), 400
+
+    # Verificar que la solicitud exista
+    solicitud = SolicitudFalla.query.get(id_solicitud)
+    if not solicitud:
+        return jsonify({"msg": "La solicitud no existe"}), 404
+
+    nuevo_mensaje = SolicitudFallaMensajes(
+        id_solicitud=id_solicitud,
+        id_usuario=id_usuario,
+        mensaje=mensaje,
+        fecha=datetime.utcnow()
+    )
+
+    db.session.add(nuevo_mensaje)
+    db.session.commit()
+
+    return jsonify({"msg": "Mensaje enviado correctamente", "id_mensaje": nuevo_mensaje.id_mensaje}), 201
+
+
+# -------------------------------
+# Rechazar una solicitud (ADMIN)
+# -------------------------------
+@app.route('/solicitudes/<int:id_solicitud>/rechazar', methods=['POST'])
+def rechazar_solicitud(id_solicitud):
+    """
+    Actualiza estado a 'rechazada' y guarda la razón de rechazo
+    """
+    data = request.json
+    razon_rechazo = data.get('razon_rechazo')
+
+    if not razon_rechazo:
+        return jsonify({"msg": "Falta el motivo de rechazo"}), 400
+
+    solicitud = SolicitudFalla.query.get_or_404(id_solicitud)
+    solicitud.estado = 'rechazada'
+    solicitud.razon_rechazo = razon_rechazo  # Asegúrate de tener esta columna en tu modelo
+
+    db.session.commit()
+
+    return jsonify({"msg": "Solicitud rechazada y mensaje enviado al chofer"})  
+
+
+@app.route("/mis_mensajes/<int:id_chofer>", methods=["GET"])
+def mis_mensajes(id_chofer):
+    # Incluir solicitudes rechazadas y pendientes
+    solicitudes = SolicitudFalla.query.filter(
+        SolicitudFalla.id_chofer == id_chofer,
+        SolicitudFalla.estado.in_(["rechazada", "pendiente"])
+    ).all()
+
+    mensajes_res = []
+
+    for s in solicitudes:
+        mensajes = SolicitudFallaMensajes.query.filter_by(id_solicitud=s.id_solicitud)\
+            .order_by(SolicitudFallaMensajes.fecha.asc()).all()
+
+        msgs_formateados = []
+        for m in mensajes:
+            quien = "chofer" if m.id_usuario == id_chofer else "admin"
+            msgs_formateados.append({
+                "id_mensaje": m.id_mensaje,
+                "mensaje": m.mensaje,
+                "archivo_adjunto": m.archivo_adjunto,
+                "fecha": m.fecha,
+                "quien": quien
+            })
+
+        if msgs_formateados:  # Solo agregar solicitudes con mensajes
+            mensajes_res.append({
+                "id_solicitud": s.id_solicitud,
+                "tipo_servicio": s.tipo_servicio,
+                "mensajes": msgs_formateados,
+                "estado": s.estado
+            })
+
+    return jsonify(mensajes_res)
+
+#/fallas_mensajes/usuario/
+
+
+
+
+
+@app.route("/uploads/mensajes/<filename>")
+def subir_mensajes(filename):
+    return send_from_directory("uploads/mensajes", filename)
+
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route("/solicitudes_mensajes/responder", methods=["POST"])
+def responder_solicitud():
+    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads/mensajes")
+    ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "mp4", "webm", "ogg", "pdf"}
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+    def allowed_file(filename):
+        return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+    id_solicitud = request.form.get("id_solicitud")
+    id_usuario = request.form.get("id_usuario")
+    mensaje = request.form.get("mensaje")
+    archivo = request.files.get("archivo")
+
+    print("===== Datos recibidos =====")
+    print("id_solicitud:", id_solicitud)
+    print("id_usuario:", id_usuario)
+    print("mensaje:", mensaje)
+    print("archivo:", archivo)
+    if archivo:
+        print("Nombre original del archivo:", archivo.filename)
+
+    if not id_solicitud or not id_usuario or not mensaje:
+        return jsonify({"msg": "Faltan datos obligatorios"}), 400
+
+    solicitud = SolicitudFalla.query.get(id_solicitud)
+    if not solicitud:
+        return jsonify({"msg": "Solicitud no encontrada"}), 404
+
+    archivo_nombre = None
+    if archivo and allowed_file(archivo.filename):
+        filename = secure_filename(f"{datetime.utcnow().timestamp()}_{archivo.filename}")
+        ruta_completa = os.path.join(UPLOAD_FOLDER, filename)
+        archivo.save(ruta_completa)
+        archivo_nombre = filename
+        print("Archivo guardado en:", ruta_completa)
+
+    # Crear mensaje
+    nuevo_mensaje = SolicitudFallaMensajes(
+        id_solicitud=id_solicitud,
+        id_usuario=id_usuario,
+        mensaje=mensaje,
+        archivo_adjunto=archivo_nombre
+    )
+
+    db.session.add(nuevo_mensaje)
+
+    # Si quieres, puedes reactivar la solicitud solo si estaba rechazada
+    if solicitud.estado == "rechazada":
+        solicitud.estado = "pendiente"
+
+    db.session.commit()
+
+    print("Mensaje creado con ID:", nuevo_mensaje.id_mensaje)
+    return jsonify({"msg": "Respuesta enviada correctamente"})
+
+@app.route("/solicitudes/<int:id_solicitud>/mensajes_admin", methods=["GET"])
+def obtener_mensajes(id_solicitud):
+    try:
+        # Obtener la solicitud (esto ya valida existencia)
+        solicitud = SolicitudFalla.query.get_or_404(id_solicitud)
+
+        # Optimizar: cargar mensajes + usuario en una sola consulta JOIN
+        mensajes = (
+            db.session.query(SolicitudFallaMensajes, Usuarios)
+            .join(Usuarios, SolicitudFallaMensajes.id_usuario == Usuarios.id_usuario)
+            .filter(SolicitudFallaMensajes.id_solicitud == id_solicitud)
+            .order_by(SolicitudFallaMensajes.fecha.asc())
+            .all()
+        )
+
+        result = []
+        for m, usuario in mensajes:
+            result.append({
+                "id_mensaje": m.id_mensaje,
+                "mensaje": m.mensaje,
+                "archivo_adjunto": m.archivo_adjunto,
+                "fecha": m.fecha.isoformat(),
+                "id_usuario": m.id_usuario,
+                "rol": usuario.rol,
+                "nombre": usuario.nombre
+            })
+
+        return jsonify(result)
+
+    finally:
+        # Importante para evitar saturar el pool
+        db.session.remove()
+
+
+
+####################################
+
 @app.route('/uploads/<path:filename>')
 def serve_uploads(filename):
     # Carpeta 'uploads' absoluta
@@ -2477,6 +3555,54 @@ def serve_uploads(filename):
     # filename puede ser 'fallasmecanicas/falla_24.pdf'
     return send_from_directory(UPLOAD_FOLDER, filename, as_attachment=False)
 
+from flask import jsonify
+from sqlalchemy.orm import joinedload
+from datetime import datetime
+
+@app.route('/fallas/chofer/<int:id_usuario>', methods=['GET'])
+def fallas_por_chofer(id_usuario):
+    usuario = db.session.get(Usuarios, id_usuario)
+    if not usuario or not usuario.id_chofer:
+        return jsonify([])
+
+    asignacion = Asignaciones.query.filter_by(id_chofer=usuario.id_chofer, fecha_fin=None).first()
+    if not asignacion:
+        return jsonify([])
+
+    fallas = FallaMecanica.query.filter_by(id_unidad=asignacion.id_unidad).all()
+    resultado = []
+
+    for f in fallas:
+        unidad = Unidades.query.get(f.id_unidad)
+        pieza = Piezas.query.get(f.id_pieza)
+        marca = MarcasPiezas.query.get(f.id_marca)
+        lugar = LugarReparacion.query.get(f.id_lugar)
+
+        resultado.append({
+            "id_falla": f.id_falla,
+            "id_unidad": f.id_unidad,
+            "id_pieza": f.id_pieza,
+            "id_marca": f.id_marca,
+            "id_lugar": f.id_lugar,
+
+            "unidad": unidad.vehiculo if unidad else "No especificada",
+            "pieza": pieza.nombre_pieza if pieza else "No especificada",
+            "marca": marca.nombre_marca if marca else "No especificada",
+            "lugar_reparacion": lugar.nombre_lugar if lugar else "No especificado",
+
+            "tipo_servicio": f.tipo_servicio,
+            "descripcion": f.descripcion,
+            "proveedor": f.proveedor,
+            "tipo_pago": f.tipo_pago,
+            "costo": str(f.costo) if f.costo else "0.00",
+            "tiempo_uso_pieza": f.tiempo_uso_pieza,
+            "aplica_poliza": f.aplica_poliza,
+            "observaciones": f.observaciones,
+            "url_comprobante": f.url_comprobante,
+            "fecha_falla": f.fecha_falla.isoformat() if f.fecha_falla else None
+        })
+
+    return jsonify(resultado)
 
 #========================================================================================================
 #Placas
@@ -2485,30 +3611,42 @@ def serve_uploads(filename):
 @app.route('/placas', methods=['GET'])
 def get_placas():
     try:
-        id_unidad = request.args.get('id_unidad', None, type=int)
+        search = request.args.get('search', "", type=str)
+        id_unidad = request.args.get('id_unidad', type=int)
 
-        # Si se está consultando por unidad (verificación)
+        query = Placas.query
+
+        # Filtro de búsqueda por placa o folio
+        if search:
+            query = query.filter(
+                (Placas.placa.ilike(f"%{search}%")) |
+                (Placas.folio.ilike(f"%{search}%"))
+            )
+
+        # Filtro por unidad
         if id_unidad:
-            placas = Placas.query.filter_by(id_unidad=id_unidad).all()
-            return jsonify({
-                'placas': [p.to_dict() for p in placas]
-            })
+            query = query.filter_by(id_unidad=id_unidad)
 
-        # Si no se pasa id_unidad, aplicar paginación normal (vista general)
+        # Orden por ID descendente
+        query = query.order_by(Placas.id_placa.desc())
+
+        # Paginación
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
-        placas_query = Placas.query.paginate(page=page, per_page=per_page)
+        placas_query = query.paginate(page=page, per_page=per_page, error_out=False)
 
         placas = [p.to_dict() for p in placas_query.items]
 
         return jsonify({
-            'total': placas_query.total,
-            'page': page,
-            'per_page': per_page,
-            'placas': placas,
+            "total": placas_query.total,
+            "page": page,
+            "per_page": per_page,
+            "placas": placas
         })
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -2543,75 +3681,176 @@ def reseteo_manual():
 # ---------------------------
 
 def enviar_alertas_semanales():
-    placas_alerta = Placas.query.filter_by(requiere_renovacion=True).all()
+    print("📌 Iniciando envío de alertas")
+    hoy = date.today()
+    seis_meses = hoy + timedelta(days=180)
+
+    # Obtener placas próximas a vencer o ya vencidas
+    placas_alerta = Placas.query.filter(
+        Placas.fecha_vigencia <= seis_meses
+    ).all()
+    
+    print(f"Total placas encontradas para alerta: {len(placas_alerta)}")
     if not placas_alerta:
+        print("❌ No hay placas próximas a vencer o vencidas")
         return
 
-    for p in placas_alerta:
-        # Correo de prueba
-        correo_prueba = "imanolcruz588@gmail.com"
+    # --- 1. Administradores ---
+    admins = Usuarios.query.filter_by(rol='admin').all()
+    emails_admin = [a.correo for a in admins if a.correo]
+    print(f"Administradores con correo: {emails_admin}")
 
-        msg = Message(
-            subject=f"Placa próxima a vencer: {p.placa or 'Sin placa'}",
-            recipients=[correo_prueba],
-            body=f"La placa de la unidad {p.id_unidad} vence el {p.fecha_vigencia}. Favor de renovarla."
-        )
-        mail.send(msg)
+    if emails_admin:
+        lista_admin_html = "".join([
+            f"<li>Placa: <strong>{p.placa}</strong> | Unidad: {p.id_unidad} | Vence el: {p.fecha_vigencia}</li>"
+            for p in placas_alerta
+        ])
+        cuerpo_admin = f"<html><body><h2>Placas próximas a vencer</h2><ul>{lista_admin_html}</ul></body></html>"
+        msg_admin = Message(subject="Listado placas próximas a vencer", recipients=emails_admin, html=cuerpo_admin)
+        mail.send(msg_admin)
+        print(f"✅ Correos enviados a administradores: {emails_admin}")
 
-        mail.send(msg)
+        # Crear alertas en BD
+        for p in placas_alerta:
+            alerta = Alerta(
+                id_unidad=p.id_unidad,
+                tipo_alerta="placa",
+                descripcion=f"La placa {p.placa} está próxima a vencer el {p.fecha_vigencia}",
+                estado="pendiente",
+                detalle={"id_placa": p.id_placa}
+            )
+            db.session.add(alerta)
+        db.session.commit()
+        print(f"✅ Alertas registradas para administradores")
+
+    # --- 2. Choferes ---
+    choferes = Usuarios.query.filter_by(rol='chofer').all()
+    print(f"Choferes encontrados: {[c.id_chofer for c in choferes]}")
+    for user in choferes:
+        if not user.correo:
+            continue
+        asignaciones_activas = Asignaciones.query.filter(
+            Asignaciones.id_chofer == user.id_chofer,
+            (Asignaciones.fecha_fin == None) | (Asignaciones.fecha_fin >= hoy)
+        ).all()
+        unidades_usuario = [a.id_unidad for a in asignaciones_activas]
+        placas_usuario = [p for p in placas_alerta if p.id_unidad in unidades_usuario]
+
+        print(f"Usuario {user.id_chofer} - placas a alertar: {[p.placa for p in placas_usuario]}")
+        if not placas_usuario:
+            continue
+
+        lista_usuario_html = "".join([
+            f"<li>Placa: <strong>{p.placa}</strong> | Unidad: {p.id_unidad} | Vence el: {p.fecha_vigencia}</li>"
+            for p in placas_usuario
+        ])
+        cuerpo_usuario = f"<html><body><h2>Placas próximas a vencer de sus unidades</h2><ul>{lista_usuario_html}</ul></body></html>"
+        msg_usuario = Message(subject="Placas próximas a vencer de sus unidades", recipients=[user.correo], html=cuerpo_usuario)
+        mail.send(msg_usuario)
+        print(f"✅ Correo enviado a chofer {user.id_chofer} - {user.correo}")
+
+        for p in placas_usuario:
+            alerta = Alerta(
+                id_unidad=p.id_unidad,
+                tipo_alerta="placa",
+                descripcion=f"La placa {p.placa} de su unidad está próxima a vencer el {p.fecha_vigencia}",
+                estado="pendiente",
+                detalle={"id_placa": p.id_placa, "id_chofer": user.id_chofer}
+            )
+            db.session.add(alerta)
+        db.session.commit()
+        print(f"✅ Alertas registradas para chofer {user.id_chofer}")
+
+    print("✅ Envío de alertas completado")
 
 
 def guardar_archivo_unico(file, carpeta='placas'):
-    """Guarda un archivo con nombre único en la carpeta especificada y devuelve la ruta relativa"""
-    UPLOAD_DIR = f'uploads/{carpeta}/'
-    ext = os.path.splitext(file.filename)[1]  # mantiene la extensión
+    """Guarda un archivo (imagen o PDF) con nombre único en la carpeta especificada."""
+    
+    # Extensiones permitidas (PDF + imágenes)
+    permitidos = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
+    
+    ext = os.path.splitext(file.filename)[1].lower()  # extensión real
+    if ext not in permitidos:
+        raise ValueError("Tipo de archivo no permitido. Solo imágenes y PDFs.")
+    
+    # Crear carpeta final
+    UPLOAD_DIR = os.path.join("uploads", carpeta)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    
+    # Nombre único
     nombre_unico = f"{uuid.uuid4()}{ext}"
     path = os.path.join(UPLOAD_DIR, nombre_unico)
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+    # Guardar archivo
     file.save(path)
-    # Retornar ruta con barras normales
+
     return path.replace("\\", "/")
+
+
 
 
 @app.route("/placas/registrar", methods=["POST"])
 def registrar_o_actualizar_placa():
-    UPLOAD_DIR = 'uploads/placas/'
-    HISTORIAL_DIR = 'uploads/historial_placas/'
-    USUARIO_SISTEMA = "sistema"
+    # ---------------- Directorios ----------------
+    UPLOAD_DIR = 'placas/'
+    HISTORIAL_DIR = 'historial_placas/'
+    PAGO_DIR = 'pagos/'
+    HISTORIAL_PAGO_DIR = 'historial_pagos/'
+    TARJETA_DIR = 'tarjetas_circulacion/'
+    HISTORIAL_TARJETA_DIR = 'historial_tarjetas_circulacion/'
+
     data = request.form
+    usuarioId = data.get("usuarioId", "sistema")  # <-- reemplaza USUARIO_SISTEMA
+
     id_unidad = data.get("id_unidad")
     nueva_placa = data.get("placa")
     folio = data.get("folio")
     fecha_expedicion = data.get("fecha_expedicion")
     fecha_vigencia = data.get("fecha_vigencia")
+    monto_pago = data.get("monto_pago", 0)
 
+    # Validación básica
     if not id_unidad or not nueva_placa or not fecha_vigencia:
         return jsonify({"error": "Unidad, placa y fecha de vigencia son obligatorios"}), 400
+
 
     hoy = date.today()
     placa_activa = Placas.query.filter_by(id_unidad=id_unidad).first()
 
+    # ---------------- Funciones de archivos ----------------
+    def mover_al_historial(field_name, carpeta_historial):
+        old_path = getattr(placa_activa, field_name)
+        if old_path and os.path.exists(old_path):
+            os.makedirs(os.path.join("uploads", carpeta_historial), exist_ok=True)
+            ext = old_path.rsplit('.', 1)[1].lower()
+            nuevo_nombre = f"{uuid.uuid4()}.{ext}"
+            dst = os.path.join("uploads", carpeta_historial, nuevo_nombre)
+            shutil.move(old_path, dst)
+            setattr(placa_activa, field_name, dst.replace("\\", "/"))
+
+    def guardar_archivo_unico(archivo, carpeta):
+        os.makedirs(os.path.join("uploads", carpeta), exist_ok=True)
+        nombre = f"{uuid.uuid4()}_{archivo.filename}"
+        ruta = os.path.join("uploads", carpeta, nombre)
+        archivo.save(ruta)
+        return ruta.replace("\\", "/")
+
+    # ---------------- Actualización de placa existente ----------------
     if placa_activa:
-        # Revisar días restantes
         dias_restantes = (placa_activa.fecha_vigencia - hoy).days if placa_activa.fecha_vigencia else 0
         if dias_restantes > 180:
             return jsonify({
                 "error": f"No se puede registrar nueva placa. Vigencia actual hasta {placa_activa.fecha_vigencia}"
             }), 400
 
-        # Mover archivos al historial
-        for field_name in ["url_placa_frontal", "url_placa_trasera"]:
-            old_path = getattr(placa_activa, field_name)
-            if old_path and os.path.exists(old_path):
-                os.makedirs(HISTORIAL_DIR, exist_ok=True)
-                ext = old_path.rsplit('.', 1)[1].lower()
-                nuevo_nombre = f"{uuid.uuid4()}.{ext}"
-                dst = os.path.join(HISTORIAL_DIR, nuevo_nombre)
-                shutil.move(old_path, dst)
-                # Guardar ruta en historial
-                setattr(placa_activa, field_name, dst.replace("\\", "/"))
+        # Mover archivos antiguos al historial
+        mover_al_historial("url_placa_frontal", HISTORIAL_DIR)
+        mover_al_historial("url_placa_trasera", HISTORIAL_DIR)
+        mover_al_historial("url_comprobante_pago", HISTORIAL_PAGO_DIR)
+        mover_al_historial("url_tarjeta_circulacion", HISTORIAL_TARJETA_DIR)
 
-        # Guardar historial
+        # Guardar en historial usando usuario del frontend
         historial = HistorialPlaca(
             id_placa=placa_activa.id_placa,
             id_unidad=placa_activa.id_unidad,
@@ -2619,124 +3858,134 @@ def registrar_o_actualizar_placa():
             placa=placa_activa.placa,
             fecha_expedicion=placa_activa.fecha_expedicion,
             fecha_vigencia=placa_activa.fecha_vigencia,
+            monto_pago=placa_activa.monto_pago,
             url_placa_frontal=placa_activa.url_placa_frontal,
             url_placa_trasera=placa_activa.url_placa_trasera,
-            usuario=USUARIO_SISTEMA
+            url_comprobante_pago=placa_activa.url_comprobante_pago,
+            url_tarjeta_circulacion=placa_activa.url_tarjeta_circulacion,
+            usuario=usuarioId
         )
         db.session.add(historial)
 
-        # Actualizar la misma fila con nueva info
+        # Actualizar placa activa
         placa_activa.placa = nueva_placa
         placa_activa.folio = folio
         placa_activa.fecha_expedicion = fecha_expedicion
         placa_activa.fecha_vigencia = fecha_vigencia
+        placa_activa.monto_pago = monto_pago
 
-        # Archivos PDF con nombre único
-        if 'url_placa_frontal' in request.files:
-            archivo = request.files['url_placa_frontal']
-            placa_activa.url_placa_frontal = guardar_archivo_unico(archivo, 'placas')
-        if 'url_placa_trasera' in request.files:
-            archivo = request.files['url_placa_trasera']
-            placa_activa.url_placa_trasera = guardar_archivo_unico(archivo, 'placas')
+        # Guardar archivos nuevos
+        file_fields = {
+            "url_placa_frontal": UPLOAD_DIR,
+            "url_placa_trasera": UPLOAD_DIR,
+            "comprobante": PAGO_DIR,
+            "tarjeta_circulacion": TARJETA_DIR
+        }
+
+        for field_name, carpeta in file_fields.items():
+            archivo = request.files.get(field_name)
+            if archivo:
+                ruta = guardar_archivo_unico(archivo, carpeta)
+                if field_name == "comprobante":
+                    placa_activa.url_comprobante_pago = ruta
+                elif field_name == "tarjeta_circulacion":
+                    placa_activa.url_tarjeta_circulacion = ruta
+                else:
+                    setattr(placa_activa, field_name, ruta)
 
         placa_activa.requiere_renovacion = False
         db.session.commit()
+
+        # 🔹 Marcar alertas como completadas tras la renovación
+        alertas_pendientes = Alerta.query.filter_by(
+            id_unidad=id_unidad,
+            tipo_alerta="placa",
+            estado="pendiente"
+        ).all()
+        for alerta in alertas_pendientes:
+            alerta.estado = "completada"
+            alerta.fecha_resuelta = datetime.utcnow()
+        db.session.commit()
+
         return jsonify({"message": "Placa actualizada correctamente"}), 200
 
-    # Si no existe, crear nuevo registro
+    # ---------------- Registro de nueva placa ----------------
     nueva = Placas(
         id_unidad=id_unidad,
         placa=nueva_placa,
         folio=folio,
         fecha_expedicion=fecha_expedicion,
         fecha_vigencia=fecha_vigencia,
+        monto_pago=monto_pago,
         requiere_renovacion=False
     )
 
-    # Archivos PDF con nombre único
-    if 'url_placa_frontal' in request.files:
-        archivo = request.files['url_placa_frontal']
-        nueva.url_placa_frontal = guardar_archivo_unico(archivo, 'placas')
-    if 'url_placa_trasera' in request.files:
-        archivo = request.files['url_placa_trasera']
-        nueva.url_placa_trasera = guardar_archivo_unico(archivo, 'placas')
+    # Guardar archivos nuevos
+    file_fields = {
+        "url_placa_frontal": UPLOAD_DIR,
+        "url_placa_trasera": UPLOAD_DIR,
+        "comprobante": PAGO_DIR,
+        "tarjeta_circulacion": TARJETA_DIR
+    }
+
+    for field_name, carpeta in file_fields.items():
+        archivo = request.files.get(field_name)
+        if archivo:
+            ruta = guardar_archivo_unico(archivo, carpeta)
+            if field_name == "comprobante":
+                nueva.url_comprobante_pago = ruta
+            elif field_name == "tarjeta_circulacion":
+                nueva.url_tarjeta_circulacion = ruta
+            else:
+                setattr(nueva, field_name, ruta)
 
     db.session.add(nueva)
     db.session.commit()
+
     return jsonify({"message": "Placa registrada correctamente"}), 200
-
-# ---------------------------
-# Función de reseteo y marcación
-# ---------------------------
-def reseteo_y_alertas():
-    UPLOAD_DIR = 'uploads/placas/'
-    HISTORIAL_DIR = 'uploads/historial_placas/'
-    hoy = date.today()
-    fecha_preaviso = hoy + timedelta(days=180)
-    usuario = "sistema"
-
-    # 1️⃣ Marcar placas próximas a vencer
-    placas_preaviso = Placas.query.filter(
-        Placas.fecha_vigencia <= fecha_preaviso,
-        Placas.requiere_renovacion == False
-    ).all()
-
-    for p in placas_preaviso:
-        p.requiere_renovacion = True
-
-    db.session.commit()
-
-    # 2️⃣ Reseteo físico de placas vencidas
-    placas_vencidas = Placas.query.filter(
-        Placas.fecha_vigencia <= hoy,
-        Placas.requiere_renovacion == True
-    ).all()
-
-    for p in placas_vencidas:
-        # Mover archivos a historial
-        for url in [p.url_placa_frontal, p.url_placa_trasera]:
-            if url:
-                nombre = os.path.basename(url)
-                src = os.path.join(UPLOAD_DIR, nombre)
-                dst = os.path.join(HISTORIAL_DIR, nombre)
-                if os.path.exists(src):
-                    shutil.move(src, dst)
-
-        # Guardar historial
-        historial = HistorialPlaca(
-            id_placa=p.id_placa,
-            id_unidad=p.id_unidad,
-            folio=p.folio,
-            placa=p.placa,
-            fecha_expedicion=p.fecha_expedicion,
-            fecha_vigencia=p.fecha_vigencia,
-            url_placa_frontal=p.url_placa_frontal.replace(UPLOAD_DIR,HISTORIAL_DIR) if p.url_placa_frontal else None,
-            url_placa_trasera=p.url_placa_trasera.replace(UPLOAD_DIR,HISTORIAL_DIR) if p.url_placa_trasera else None,
-            usuario=usuario
-        )
-        db.session.add(historial)
-
-        # Limpiar registro activo
-        p.placa = None
-        p.fecha_expedicion = None
-        p.url_placa_frontal = None
-        p.url_placa_trasera = None
-        # Mantener requiere_renovacion=True para alertas semanales
-
-    db.session.commit()
-
-    # 3️⃣ Enviar alertas semanales
-    enviar_alertas_semanales()
-
-    placas_reseteadas = [p.id_placa for p in placas_vencidas]
-    return placas_reseteadas
 
 # ---------------------------
 # Scheduler diario
 # ---------------------------
 scheduler = BackgroundScheduler()
-scheduler.add_job(lambda: app.app_context().push() or reseteo_y_alertas(), 'interval', days=7)
+
+def job_envio_alertas():
+    with app.app_context():  # Contexto de Flask activo
+        print("📌 Iniciando envío de alertas")
+        try:
+            enviar_alertas_semanales()
+            print("✅ Alertas enviadas correctamente")
+        except Exception as e:
+            print(f"❌ Error al enviar alertas: {e}")
+
+# Ejecutar cada 100 segundos
+scheduler.add_job(job_envio_alertas, 'interval', seconds=16060)
 scheduler.start()
+
+
+
+@app.route("/placas/<int:id_placa>", methods=["DELETE"])
+def eliminar_placa(id_placa):
+    UPLOAD_DIR = 'uploads/placas/'
+    placa = Placas.query.get(id_placa)
+
+    if not placa:
+        return jsonify({"error": "Placa no encontrada"}), 404
+
+    # Eliminar archivos asociados (solo los de placas)
+    for field_name in ["url_placa_frontal", "url_placa_trasera"]:
+        file_path = getattr(placa, field_name)
+        if file_path and file_path.startswith(UPLOAD_DIR) and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"Error eliminando archivo {file_path}: {e}")
+
+    # Eliminar registro de la base de datos
+    db.session.delete(placa)
+    db.session.commit()
+
+    return jsonify({"message": "Placa y archivos asociados eliminados correctamente"}), 200
 
 # ---------------------------
 # Endpoint para consultar alertas
@@ -2752,6 +4001,14 @@ def alertas_placas_endpoint():
 
 
 
+
+ALLOWED_EXTENSIONS = {"pdf"}
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+
 ALLOWED_EXTENSIONS = {"pdf"}
 
 def allowed_file(filename):
@@ -2759,11 +4016,24 @@ def allowed_file(filename):
 
 @app.route("/placas/<int:id_placa>", methods=["PUT"])
 def update_placa(id_placa):
-    UPLOAD_FOLDER = "uploads/placas"
-    placa = Placas.query.get(id_placa)
+    import pprint
+    pp = pprint.PrettyPrinter(indent=2)
 
+    # Carpetas de almacenamiento
+    UPLOAD_FOLDER_PLACAS = "uploads/placas"
+    UPLOAD_FOLDER_PAGOS = "uploads/pagos"
+    UPLOAD_FOLDER_TARJETAS = "uploads/tarjetas_circulacion"
+
+    # Obtener placa
+    placa = Placas.query.get(id_placa)
     if not placa:
         return jsonify({"error": "Placa no encontrada"}), 404
+
+    # Debug: imprimir lo que llega
+    print("\n=== Datos recibidos en request.form ===")
+    pp.pprint(request.form.to_dict())
+    print("\n=== Archivos recibidos en request.files ===")
+    pp.pprint(request.files.to_dict())
 
     # Validar id_unidad
     id_unidad = request.form.get("id_unidad", placa.id_unidad)
@@ -2798,28 +4068,63 @@ def update_placa(id_placa):
         requiere_renovacion = requiere_renovacion.lower() in ["true", "1", "yes"]
     placa.requiere_renovacion = bool(requiere_renovacion)
 
-    # Archivos PDF con nombre único
-    for field_name in ["url_placa_frontal", "url_placa_trasera"]:
-        if field_name in request.files:
-            file = request.files[field_name]
-            if file and allowed_file(file.filename):
-                # Eliminar archivo viejo si existe
-                old_path = getattr(placa, field_name)
-                if old_path and os.path.exists(old_path):
-                    os.remove(old_path)
+    # monto_pago
+    monto_pago = request.form.get("monto_pago")
+    if monto_pago:
+        try:
+            placa.monto_pago = float(monto_pago)
+        except ValueError:
+            return jsonify({"error": "Monto pago inválido"}), 400
 
-                # Crear nombre único
-                ext = os.path.splitext(file.filename)[1]  # conservar extensión
-                new_filename = f"{uuid.uuid4()}{ext}"
-                os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-                file_path = os.path.join(UPLOAD_FOLDER, new_filename)
-                file.save(file_path)
-                setattr(placa, field_name, file_path)
+    # Función para manejar archivos PDF, sobrescribiendo si existe
+    # Función para manejar archivos PDF o imagen
+    def handle_file(file_field_name, upload_dir, field_name_model=None):
+        field_name_model = field_name_model or file_field_name
+
+        file = request.files.get(file_field_name)
+        if not file or file.filename == "":
+            print(f"No se recibió archivo en '{file_field_name}'.")
+            return
+
+        ext = os.path.splitext(file.filename)[1].lower()
+        permitidos = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
+        if ext not in permitidos:
+            print(f"Extensión no permitida en {file.filename}")
+            return
+
+        os.makedirs(upload_dir, exist_ok=True)
+
+        old_path = getattr(placa, field_name_model)
+        if old_path and os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+                print(f"Archivo viejo eliminado: {old_path}")
+            except Exception as e:
+                print(f"No se pudo eliminar {old_path}: {e}")
+
+        nombre_unico = f"{uuid.uuid4()}{ext}"
+        file_path = os.path.join(upload_dir, nombre_unico)
+        file.save(file_path)
+
+        file_path = file_path.replace("\\", "/")
+        setattr(placa, field_name_model, file_path)
+
+        print(f"Archivo nuevo guardado en: {file_path}")
+
+    # Manejar todos los archivos con mapeo correcto
+    handle_file("url_placa_frontal", UPLOAD_FOLDER_PLACAS)
+    handle_file("url_placa_trasera", UPLOAD_FOLDER_PLACAS)
+    handle_file("comprobante", UPLOAD_FOLDER_PAGOS, field_name_model="url_comprobante_pago")
+    handle_file("tarjeta_circulacion", UPLOAD_FOLDER_TARJETAS, field_name_model="url_tarjeta_circulacion")
+
+    # Commit
     try:
         db.session.commit()
+        print("\nActualización de placa exitosa:", placa.to_dict())
         return jsonify({"message": "Placa actualizada correctamente", "placa": placa.to_dict()})
     except Exception as e:
         db.session.rollback()
+        print("\nError al actualizar placa:", str(e))
         return jsonify({"error": str(e)}), 500
 
 # ---------------------------
@@ -2828,22 +4133,40 @@ def update_placa(id_placa):
 @app.route("/placas/historial", methods=["GET"])
 def get_historial_placas():
     historial = HistorialPlaca.query.order_by(HistorialPlaca.fecha_vigencia.desc()).all()
-    historial_list = [
-        {
+    historial_list = []
+
+    for h in historial:
+        unidad = Unidades.query.get(h.id_unidad)
+        
+        # Obtener nombre de usuario
+        usuario_nombre = h.usuario  # por defecto
+        if h.usuario:
+            usuario_obj = Usuarios.query.get(h.usuario)
+            if usuario_obj:
+                usuario_nombre = usuario_obj.nombre
+
+        historial_list.append({
             "id_historial": h.id_historial,
             "id_placa": h.id_placa,
             "id_unidad": h.id_unidad,
-            "folio": h.folio,
+            "nombre_unidad": unidad.vehiculo if unidad else "N/A",
+            "vehiculo": unidad.vehiculo if unidad else "N/A",
+            "modelo": unidad.modelo if unidad else "N/A",
             "placa": h.placa,
+            "folio": h.folio,
             "fecha_expedicion": h.fecha_expedicion.strftime("%Y-%m-%d") if h.fecha_expedicion else None,
             "fecha_vigencia": h.fecha_vigencia.strftime("%Y-%m-%d") if h.fecha_vigencia else None,
+            "monto_pago": h.monto_pago,
             "url_placa_frontal": h.url_placa_frontal,
             "url_placa_trasera": h.url_placa_trasera,
-            "usuario": h.usuario
-        }
-        for h in historial
-    ]
+            "url_comprobante_pago": h.url_comprobante_pago,
+            "url_tarjeta_circulacion": h.url_tarjeta_circulacion,
+            "usuario": usuario_nombre
+        })
+
     return jsonify({"historial": historial_list})
+
+
 
 
 # Ruta para servir archivos de placas
@@ -2902,41 +4225,42 @@ ALLOWED_EXTENSIONS = {"pdf"}
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def save_uploaded_file(file_obj, tipo, id_unidad, fecha_pago):
+def save_uploaded_file(file_obj, id_unidad, fecha_pago):
     if not file_obj or file_obj.filename == "":
         return None
     if not allowed_file(file_obj.filename):
         return None
 
-    subfolder = "refrendo" if tipo == "REFRENDO" else "tenencia"
-    folder = os.path.join(app.root_path, "uploads", subfolder)
+    # Carpeta única para todos los PDFs de Refrendo y Tenencia
+    folder = os.path.join(app.root_path, "uploads", "refrendo_tenencia")
     os.makedirs(folder, exist_ok=True)
 
     ext = os.path.splitext(file_obj.filename)[1].lower()
-    filename = f"{tipo.lower()}_{id_unidad}_{fecha_pago.isoformat()}_{uuid.uuid4().hex}{ext}"
+    filename = f"{id_unidad}_{fecha_pago.isoformat()}_{uuid.uuid4().hex}{ext}"
     safe = secure_filename(filename)
     filepath = os.path.join(folder, safe)
     file_obj.save(filepath)
 
-    return os.path.join("uploads", subfolder, safe).replace("\\", "/")
+    # Retornar ruta relativa para almacenar en la base de datos
+    return os.path.join("uploads", "refrendo_tenencia", safe).replace("\\", "/")
 
-def move_file_to_historial(url, tipo):
+def move_file_to_historial(url):
     if not url:
         return None
-    src = os.path.join(app.root_path, url)
-    subfolder = "historial_refrendo" if tipo == "REFRENDO" else "historial_tenencia"
-    folder = os.path.join(app.root_path, "uploads", subfolder)
+
+    folder = os.path.join(app.root_path, "uploads", "historial_refrendo_tenencia")
     os.makedirs(folder, exist_ok=True)
+
     nombre = os.path.basename(url)
+    src = os.path.join(app.root_path, url)
     dst = os.path.join(folder, nombre)
+
     if os.path.exists(src):
         shutil.move(src, dst)
-    return os.path.join("uploads", subfolder, nombre).replace("\\", "/")
 
-# ----------------------------
-# Endpoint principal
-# ----------------------------
-# ----------------------------
+    return os.path.join("uploads", "historial_refrendo_tenencia", nombre).replace("\\", "/")
+
+
 @app.route('/refrendo_tenencia', methods=['POST'])
 def registrar_pago():
     data = request.form
@@ -2947,7 +4271,8 @@ def registrar_pago():
         monto_refrendo = float(data.get('monto_refrendo') or 0)
         monto_tenencia = float(data.get('monto_tenencia') or 0)
         usuario = data.get('usuario', 'Sistema')
-    except Exception:
+    except Exception as e:
+        print("Error en los datos:", e)
         return jsonify({"error": "Datos inválidos"}), 400
 
     unidad = Unidades.query.get(id_unidad)
@@ -2956,11 +4281,8 @@ def registrar_pago():
 
     limite_pago = date(fecha_pago.year, 3, 31)
     reset_realizado = False
-    nuevo_registro = False
 
-    # ------------------------------------------------------------------
-    # 1️⃣ Verificar si ya existe registro del mismo año
-    # ------------------------------------------------------------------
+    # 1) Verificar si ya existe pago de este año
     existe_refrendo = Refrendo_Tenencia.query.filter(
         Refrendo_Tenencia.id_unidad == id_unidad,
         db.extract('year', Refrendo_Tenencia.fecha_pago) == fecha_pago.year
@@ -2969,12 +4291,15 @@ def registrar_pago():
     if existe_refrendo:
         return jsonify({"error": "Ya existe un pago registrado para este año"}), 400
 
-    # ------------------------------------------------------------------
-    # 2️⃣ Buscar registro previo (año anterior)
-    # ------------------------------------------------------------------
+    # 2) Buscar registro previo
     registro = Refrendo_Tenencia.query.filter_by(id_unidad=id_unidad).first()
 
     if registro and registro.fecha_pago and registro.fecha_pago.year < fecha_pago.year:
+        print("Registro previo encontrado, moviendo a historial y reseteando...")
+
+        # MOVER ARCHIVO ANTES DE RESET
+        ruta_historial = move_file_to_historial(registro.url_factura)
+
         historial = Historial_Refrendo_Tenencia(
             id_pago=registro.id_pago,
             id_unidad=registro.id_unidad,
@@ -2983,29 +4308,39 @@ def registrar_pago():
             monto_refrendo=registro.monto_refrendo,
             monto_tenencia=registro.monto_tenencia,
             fecha_pago=registro.fecha_pago,
-            url_factura_refrendo=move_file_to_historial(registro.url_factura_refrendo, "REFRENDO"),
-            url_factura_tenencia=move_file_to_historial(registro.url_factura_tenencia, "TENENCIA"),
+            url_factura=ruta_historial,     # ✔ YA MOVIDO
             observaciones=registro.observaciones,
             tipo_movimiento="REGISTRO",
             usuario_registro=usuario
         )
         db.session.add(historial)
 
+        # Resetear registro
         registro.monto = 0
         registro.monto_refrendo = 0
         registro.monto_tenencia = 0
         registro.fecha_pago = None
         registro.tipo_pago = 'PENDIENTE'
         registro.observaciones = None
-        registro.url_factura_refrendo = None
-        registro.url_factura_tenencia = None
+        registro.url_factura = None
         db.session.commit()
-        reset_realizado = True
 
-    # ------------------------------------------------------------------
-    # 3️⃣ Crear nuevo registro si no existe activo
-    # ------------------------------------------------------------------
-    if not registro or reset_realizado:
+        reset_realizado = True
+        print("Fila reseteada correctamente")
+
+    # 3) Actualizar o crear registro
+    if registro and reset_realizado:
+        print("Actualizando registro reseteado con nuevos datos...")
+        registro.fecha_pago = fecha_pago
+        registro.limite_pago = limite_pago
+        registro.tipo_pago = 'REFRENDO' if fecha_pago <= limite_pago else 'AMBOS'
+        registro.monto_refrendo = monto_refrendo or monto_general
+        registro.monto_tenencia = monto_tenencia or monto_general
+        registro.monto = (monto_refrendo or monto_general) + (monto_tenencia or monto_general)
+        registro.observaciones = data.get('observaciones')
+
+    elif not registro:
+        print("Creando nuevo registro...")
         registro = Refrendo_Tenencia(
             id_unidad=id_unidad,
             fecha_pago=fecha_pago,
@@ -3017,19 +4352,31 @@ def registrar_pago():
             observaciones=data.get('observaciones')
         )
         db.session.add(registro)
-        db.session.commit()
-        nuevo_registro = True
 
-    # ------------------------------------------------------------------
-    # 4️⃣ Guardar PDFs
-    # ------------------------------------------------------------------
-    file_refrendo = request.files.get('url_factura_refrendo')
-    file_tenencia = request.files.get('url_factura_tenencia')
-
-    registro.url_factura_refrendo = save_uploaded_file(file_refrendo, "REFRENDO", id_unidad, fecha_pago)
-    registro.url_factura_tenencia = save_uploaded_file(file_tenencia, "TENENCIA", id_unidad, fecha_pago)
+    # 4) Guardar PDF nuevo
+    file_pdf = request.files.get('url_factura')
+    if file_pdf:
+        ruta_nueva = save_uploaded_file(file_pdf, id_unidad, fecha_pago)
+        registro.url_factura = ruta_nueva
 
     db.session.commit()
+    print(f"Pago registrado correctamente: ID {registro.id_pago}, Tipo {registro.tipo_pago}")
+
+    # ---------------------------------------------------
+    # 5) MARCAR ALERTAS COMO COMPLETADAS (AGREGADO AQUÍ)
+    # ---------------------------------------------------
+    alertas = Alerta.query.filter_by(
+        id_unidad=id_unidad,
+        tipo_alerta="refrendo_tenencia",
+        estado="pendiente"
+    ).all()
+
+    for alerta in alertas:
+        alerta.estado = "completada"
+        alerta.fecha_resuelta = datetime.utcnow()
+
+    db.session.commit()
+    # ---------------------------------------------------
 
     return jsonify({
         "message": f"Pago {registro.tipo_pago} registrado correctamente",
@@ -3040,9 +4387,30 @@ def registrar_pago():
 @app.route('/refrendo_tenencia', methods=['GET'])
 def listar_pagos_refrendo_tenencia():
     try:
-        pagos = Refrendo_Tenencia.query.join(Unidades).all()
-        data = []
+        # Obtener filtros desde query params
+        filtro_unidad = request.args.get('unidad')  # id_unidad
+        filtro_tipo_pago = request.args.get('tipo_pago')  # REFRENDO, TENENCIA, AMBOS
+        filtro_fecha_inicio = request.args.get('fecha_inicio')  # YYYY-MM-DD
+        filtro_fecha_fin = request.args.get('fecha_fin')  # YYYY-MM-DD
 
+        # Construir query
+        query = Refrendo_Tenencia.query.join(Unidades)
+
+        if filtro_unidad:
+            query = query.filter(Refrendo_Tenencia.id_unidad == filtro_unidad)
+
+        if filtro_tipo_pago:
+            query = query.filter(Refrendo_Tenencia.tipo_pago == filtro_tipo_pago)
+
+        if filtro_fecha_inicio:
+            query = query.filter(Refrendo_Tenencia.fecha_pago >= filtro_fecha_inicio)
+
+        if filtro_fecha_fin:
+            query = query.filter(Refrendo_Tenencia.fecha_pago <= filtro_fecha_fin)
+
+        pagos = query.all()
+
+        data = []
         for pago in pagos:
             data.append({
                 "id_pago": pago.id_pago,
@@ -3055,13 +4423,13 @@ def listar_pagos_refrendo_tenencia():
                 "monto_refrendo": float(pago.monto_refrendo or 0),
                 "monto_tenencia": float(pago.monto_tenencia or 0),
                 "monto_total": float(pago.monto or 0),
-                "usuario": getattr(pago, "usuario", ""),  # si luego agregas campo usuario
+                "usuario": getattr(pago, "usuario", ""),
                 "observaciones": pago.observaciones or "",
-                "url_factura_refrendo": pago.url_factura_refrendo,
-                "url_factura_tenencia": pago.url_factura_tenencia,
+                "url_factura": pago.url_factura,
                 "limite_pago": pago.limite_pago.strftime('%Y-%m-%d') if pago.limite_pago else "",
                 "fecha_creacion": pago.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if pago.fecha_creacion else ""
             })
+
         return jsonify(data), 200
 
     except Exception as e:
@@ -3072,7 +4440,6 @@ def listar_pagos_refrendo_tenencia():
 def actualizar_pago(id_pago):
     data = request.form
 
-    # Ahora obtenemos el usuario desde FormData
     user_id = data.get("usuario")
     if not user_id:
         return jsonify({"error": "Usuario no proporcionado"}), 401
@@ -3082,26 +4449,59 @@ def actualizar_pago(id_pago):
         return jsonify({"error": "Registro no encontrado"}), 404
 
     try:
-        if 'fecha_pago' in data:
-            registro.fecha_pago = datetime.strptime(data['fecha_pago'], '%Y-%m-%d').date()
-            registro.limite_pago = date(registro.fecha_pago.year, 3, 31)
+        cambios = False
+        archivo_anterior = registro.url_factura  # ruta relativa guardada en DB
+
+        # --------------------------
+        # Campos normales
+        # --------------------------
+        if 'fecha_pago' in data and data['fecha_pago']:
+            nueva_fecha = datetime.strptime(data['fecha_pago'], '%Y-%m-%d').date()
+            if registro.fecha_pago != nueva_fecha:
+                registro.fecha_pago = nueva_fecha
+                registro.limite_pago = date(nueva_fecha.year, 3, 31)
+                cambios = True
 
         if 'monto_refrendo' in data:
             registro.monto_refrendo = float(data['monto_refrendo'])
+            cambios = True
+
         if 'monto_tenencia' in data:
             registro.monto_tenencia = float(data['monto_tenencia'])
+            cambios = True
+
         if 'observaciones' in data:
             registro.observaciones = data['observaciones']
+            cambios = True
 
-        # Archivos
-        file_refrendo = request.files.get('url_factura_refrendo')
-        file_tenencia = request.files.get('url_factura_tenencia')
-        if file_refrendo:
-            registro.url_factura_refrendo = save_uploaded_file(file_refrendo, "REFRENDO", registro.id_unidad, registro.fecha_pago)
-        if file_tenencia:
-            registro.url_factura_tenencia = save_uploaded_file(file_tenencia, "TENENCIA", registro.id_unidad, registro.fecha_pago)
+        # Total
+        registro.monto = (registro.monto_refrendo or 0) + (registro.monto_tenencia or 0)
 
-        registro.usuario = user_id  # 👈 Usuario desde frontend
+        # --------------------------
+        # Manejo del archivo nuevo
+        # --------------------------
+        file_pdf = request.files.get('url_factura')
+
+        if file_pdf:
+            # 1) Eliminar archivo viejo si existía
+            if archivo_anterior:
+                ruta_completa = os.path.join(app.root_path, archivo_anterior)
+                if os.path.exists(ruta_completa):
+                    os.remove(ruta_completa)
+
+            # 2) Guardar nuevo archivo
+            registro.url_factura = save_uploaded_file(file_pdf, registro.id_unidad, registro.fecha_pago)
+            cambios = True
+
+        # --------------------------
+        # Registrar historial
+        # --------------------------
+
+
+        registro.usuario = user_id
+
+        if not cambios:
+            return jsonify({"message": "No hubo cambios que actualizar"}), 200
 
         db.session.commit()
         return jsonify({"message": "Pago actualizado correctamente"}), 200
@@ -3132,11 +4532,10 @@ def get_historiales():
                 "monto_refrendo": float(h.monto_refrendo) if h.monto_refrendo else 0,
                 "monto_tenencia": float(h.monto_tenencia) if h.monto_tenencia else 0,
                 "fecha_pago": h.fecha_pago.strftime("%Y-%m-%d") if h.fecha_pago else None,
-                "url_factura_refrendo": h.url_factura_refrendo,
-                "url_factura_tenencia": h.url_factura_tenencia,
+                "url_factura": h.url_factura,            # <-- AHORA SOLO UNO
                 "observaciones": h.observaciones,
                 "fecha_registro": h.fecha_registro.strftime("%Y-%m-%d %H:%M:%S") if h.fecha_registro else None,
-                "tipo_movimiento": h.tipo_movimiento,
+                "tipo_movimiento": h.tipo_movimiento,    # <-- SE MANTIENE
                 "usuario_registro": h.usuario_registro,
                 "observaciones_adicional": h.observaciones_adicional
             })
@@ -3146,18 +4545,27 @@ def get_historiales():
     except Exception as e:
         print("ERROR get_historiales:", e)
         return jsonify({"error": str(e)}), 500
-        
+
 def enviar_alertas_refrendo_tenencia():
     hoy = date.today()
     año_actual = hoy.year
-    inicio_periodo = date(año_actual, 1, 1)
     fin_periodo = date(año_actual, 3, 31)
 
     unidades = Unidades.query.all()
     if not unidades:
         return []
 
-    alertas_por_correo = {}
+    # Almacena alertas completas
+    alertas_generadas = []
+
+    # ------------------------------------------------------------------------------------------------
+    # 1. Administradores
+    # ------------------------------------------------------------------------------------------------
+    admins = Usuarios.query.filter_by(rol='admin').all()
+    emails_admin = [a.correo for a in admins if a.correo]
+
+    pendientes = []
+
     for u in unidades:
         pago = Refrendo_Tenencia.query.filter(
             Refrendo_Tenencia.id_unidad == u.id_unidad,
@@ -3165,51 +4573,131 @@ def enviar_alertas_refrendo_tenencia():
         ).first()
 
         if not pago:
-            correo = getattr(u, "correo", None) or "imanolcruz588@gmail.com"
-            if correo not in alertas_por_correo:
-                alertas_por_correo[correo] = []
-
             mensaje = (
-                f"Pague refrendo antes del 31 de marzo"
+                "Pague refrendo antes del 31 de marzo"
                 if hoy <= fin_periodo
                 else "Debe pagar refrendo y tenencia. Se aplicarán recargos."
             )
-            alertas_por_correo[correo].append({
+
+            pendientes.append({
                 "id_unidad": u.id_unidad,
                 "vehiculo": u.vehiculo,
                 "modelo": u.modelo,
                 "mensaje": mensaje
             })
 
-    resultado = []
-    for correo, vehiculos in alertas_por_correo.items():
-        cuerpo = "Unidades con pagos pendientes:\n\n"
-        for v in vehiculos:
-            cuerpo += f"- {v['vehiculo']} {v['modelo']} (ID {v['id_unidad']}): {v['mensaje']}\n"
-            resultado.append({
-                "correo": correo,
-                "id_unidad": v['id_unidad'],
-                "vehiculo": v['vehiculo'],
-                "modelo": v['modelo'],
-                "mensaje": v['mensaje']
-            })
+    # -------- Enviar correos a Administradores
+    if emails_admin and pendientes:
+        lista_html = "".join([
+            f"<li><strong>{p['vehiculo']} {p['modelo']}</strong> (ID {p['id_unidad']}): {p['mensaje']}</li>"
+            for p in pendientes
+        ])
+
+        cuerpo_html = f"""
+        <html>
+        <body>
+            <h2>Unidades con refrendo/tenencia pendiente</h2>
+            <ul>{lista_html}</ul>
+        </body>
+        </html>
+        """
 
         msg = Message(
-            subject=f"Aviso de pagos pendientes ({año_actual})",
-            recipients=[correo],
-            body=cuerpo
+            subject=f"Avisos de refrendo/tenencia {año_actual}",
+            recipients=emails_admin,
+            html=cuerpo_html
         )
         mail.send(msg)
-        print(f"[INFO] Correo enviado a {correo} con {len(vehiculos)} vehículos.")
 
-    print(f"[INFO] Total alertas enviadas: {len(resultado)}")
-    return resultado
+        # Registrar alertas para admin
+        for p in pendientes:
+            alerta = Alerta(
+                id_unidad=p["id_unidad"],
+                tipo_alerta="refrendo_tenencia",
+                descripcion=f"La unidad {p['vehiculo']} {p['modelo']} ({p['id_unidad']}) requiere pago: {p['mensaje']}",
+                estado="pendiente",
+                detalle={"rol": "admin"}
+            )
+            db.session.add(alerta)
+            alertas_generadas.append(alerta)
+
+        db.session.commit()
+        print(f"[ADMIN] Alertas enviadas y registradas para {len(emails_admin)} administradores.")
+
+    # ------------------------------------------------------------------------------------------------
+    # 2. Choferes
+    # ------------------------------------------------------------------------------------------------
+    choferes = Usuarios.query.filter_by(rol="chofer").all()
+
+    for user in choferes:
+        if not user.correo:
+            continue
+
+        # Unidades asignadas al chofer
+        asignaciones = Asignaciones.query.filter(
+            Asignaciones.id_chofer == user.id_chofer,
+            (Asignaciones.fecha_fin == None) | (Asignaciones.fecha_fin >= hoy)
+        ).all()
+
+        ids_unidades_user = [a.id_unidad for a in asignaciones]
+
+        pendientes_user = [
+            p for p in pendientes if p["id_unidad"] in ids_unidades_user
+        ]
+
+        if not pendientes_user:
+            continue
+
+        lista_html = "".join([
+            f"<li><strong>{p['vehiculo']} {p['modelo']}</strong> (ID {p['id_unidad']}): {p['mensaje']}</li>"
+            for p in pendientes_user
+        ])
+
+        cuerpo_html = f"""
+        <html>
+        <body>
+            <h2>Refrendo/tenencia pendiente de sus unidades</h2>
+            <ul>{lista_html}</ul>
+        </body>
+        </html>
+        """
+
+        msg_user = Message(
+            subject="Aviso de refrendo/tenencia",
+            recipients=[user.correo],
+            html=cuerpo_html
+        )
+        mail.send(msg_user)
+
+        # Registrar alertas personalizadas para chofer
+        for p in pendientes_user:
+            alerta = Alerta(
+                id_unidad=p["id_unidad"],
+                tipo_alerta="refrendo_tenencia",
+                descripcion=f"La unidad {p['vehiculo']} {p['modelo']} ({p['id_unidad']}) requiere pago: {p['mensaje']}",
+                estado="pendiente",
+                detalle={"id_chofer": user.id_chofer, "rol": "chofer"}
+            )
+            db.session.add(alerta)
+            alertas_generadas.append(alerta)
+
+        db.session.commit()
+        print(f"[CHOFER] Alertas enviadas al chofer {user.id_chofer}")
+
+    print(f"[INFO] Total alertas registradas: {len(alertas_generadas)}")
+    return alertas_generadas
+
 
 # --------------------------------------------
 # Programador semanal automático
 # --------------------------------------------
+
 scheduler = BackgroundScheduler()
-scheduler.add_job(lambda: app.app_context().push() or enviar_alertas_refrendo_tenencia(), 'interval', days=7)
+def job_enviar_alertas_refrendo_tenencia():
+    with app.app_context():
+        enviar_alertas_refrendo_tenencia()
+
+scheduler.add_job(job_enviar_alertas_refrendo_tenencia, 'interval', seconds=25080)
 scheduler.start()
 
 # --------------------------------------------
@@ -3227,7 +4715,6 @@ def test_alertas():
 #===================================================
 #Mantenimientod programados
 #====================================================
-
 
 # ------------------------------------------------------
 # UTIL: obtener frecuencia por marca y tipo
@@ -3272,6 +4759,7 @@ def get_frecuencias():
         "frecuencia_tiempo": f.frecuencia_tiempo,
         "frecuencia_kilometraje": f.frecuencia_kilometraje
     } for f in filas])
+
 
 @app.route('/frecuencias_pormarca', methods=['POST'])
 def post_frecuencia():
@@ -3341,6 +4829,8 @@ def listar_programados():
         MantenimientosProgramados.id_unidad,
         sub_placa.c.placa,
         Unidades.marca,
+        Unidades.modelo,
+        Unidades.clase_tipo,
         Unidades.kilometraje_actual,
         TiposMantenimiento.nombre_tipo,
         MantenimientosProgramados.fecha_ultimo_mantenimiento,
@@ -3363,9 +4853,12 @@ def listar_programados():
         resultado.append({
             "id_mantenimiento_programado": row.id_mantenimiento_programado,
             "id_unidad": row.id_unidad,
+            "modelo": row.modelo,
+            "clase_tipo": row.clase_tipo,
             "placa": row.placa,
             "marca": row.marca,
             "tipo": row.nombre_tipo,
+            "kilometraje_actual": row.kilometraje_actual,
             "fecha_ultimo_mantenimiento": row.fecha_ultimo_mantenimiento.isoformat() if row.fecha_ultimo_mantenimiento else None,
             "kilometraje_ultimo": row.kilometraje_ultimo,
             "proximo_mantenimiento": row.proximo_mantenimiento.isoformat() if row.proximo_mantenimiento else None,
@@ -3377,10 +4870,23 @@ def listar_programados():
 # ---------------------
 # RUTA: registrar mantenimiento realizado (y reprogramar)
 # ---------------------
+
+UPLOAD_FOLDER = "uploads/mantenimientos"
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
 @app.route('/mantenimientos', methods=['POST'])
 def registrar_mantenimiento():
-    data = request.get_json()
-    # campos esperados: id_unidad, tipo_mantenimiento (nombre), kilometraje, descripcion, id_mantenimiento_programado (opcional)
+    # Crear carpeta de uploads si no existe
+    if not os.path.exists(UPLOAD_FOLDER):
+        os.makedirs(UPLOAD_FOLDER)
+
+    # Usar request.form y request.files para multipart/form-data
+    data = request.form
+    archivo = request.files.get("url_comprobante")  # ⚡ archivo
+
     id_unidad = data.get('id_unidad')
     tipo_nombre = data.get('tipo_mantenimiento')
     kilometraje = data.get('kilometraje')
@@ -3390,23 +4896,38 @@ def registrar_mantenimiento():
     if not id_unidad or not tipo_nombre or kilometraje is None:
         return jsonify({"error":"id_unidad, tipo_mantenimiento y kilometraje son requeridos"}), 400
 
+    try:
+        kilometraje = int(kilometraje)
+    except (TypeError, ValueError):
+        return jsonify({"error":"Kilometraje debe ser un número válido"}), 400
+
     unidad = Unidades.query.get(id_unidad)
     if not unidad:
         return jsonify({"error":"Unidad no encontrada"}), 404
 
-    # Buscar tipo (Menor/Mayor)
     tipo = TiposMantenimiento.query.filter_by(nombre_tipo=tipo_nombre).first()
     if not tipo:
         return jsonify({"error":"Tipo de mantenimiento no válido"}), 400
 
-    # Buscar el programado correspondiente si no se proporcionó
+    # Obtener mantenimiento programado
     if not id_mp:
-        mp = MantenimientosProgramados.query.filter_by(id_unidad=id_unidad, id_tipo_mantenimiento=tipo.id_tipo_mantenimiento).first()
+        mp = MantenimientosProgramados.query.filter_by(
+            id_unidad=id_unidad, 
+            id_tipo_mantenimiento=tipo.id_tipo_mantenimiento
+        ).first()
     else:
         mp = MantenimientosProgramados.query.get(id_mp)
 
-    # Crear historial mantenimiento (registro)
     fecha_real = date.today()
+
+    # Guardar archivo si existe
+    url_comprobante = None
+    if archivo and allowed_file(archivo.filename):
+        filename = secure_filename(f"{id_unidad}_{tipo_nombre}_{fecha_real}_{archivo.filename}")
+        archivo.save(os.path.join(UPLOAD_FOLDER, filename))
+        url_comprobante = f"{UPLOAD_FOLDER}/{filename}"
+
+    # Crear historial
     nuevo = Mantenimientos(
         id_mantenimiento_programado = mp.id_mantenimiento_programado if mp else None,
         id_unidad = id_unidad,
@@ -3419,26 +4940,27 @@ def registrar_mantenimiento():
         cobertura_garantia = data.get('cobertura_garantia'),
         costo = data.get('costo'),
         observaciones = data.get('observaciones'),
-        url_comprobante = data.get('url_comprobante')
+        url_comprobante = url_comprobante
     )
     db.session.add(nuevo)
 
-    # Actualizar o crear registro programado:
-    # Si existe, actualizamos fecha_ultimo y kilometraje_ultimo y recalculamos proximo
-    frecuencia = FrecuenciasPorMarca.query.filter_by(marca=unidad.marca, id_tipo_mantenimiento=tipo.id_tipo_mantenimiento).first()
+    frecuencia = FrecuenciasPorMarca.query.filter_by(
+        marca=unidad.marca, 
+        id_tipo_mantenimiento=tipo.id_tipo_mantenimiento
+    ).first()
+
+    # Actualizar o crear registro programado
     if mp:
         mp.fecha_ultimo_mantenimiento = fecha_real
         mp.kilometraje_ultimo = kilometraje
         if frecuencia:
-            # calcular próximo por tiempo y por km
             mp.proximo_mantenimiento = fecha_real + timedelta(days=frecuencia.frecuencia_tiempo)
-            mp.proximo_kilometraje = (kilometraje or 0) + frecuencia.frecuencia_kilometraje
+            mp.proximo_kilometraje = kilometraje + frecuencia.frecuencia_kilometraje
         db.session.add(mp)
     else:
-        # si no existía programado, crear uno nuevo basado en frecuencia
         if frecuencia:
             proximo_fecha = fecha_real + timedelta(days=frecuencia.frecuencia_tiempo)
-            proximo_km = (kilometraje or 0) + frecuencia.frecuencia_kilometraje
+            proximo_km = kilometraje + frecuencia.frecuencia_kilometraje
         else:
             proximo_fecha = None
             proximo_km = None
@@ -3452,13 +4974,10 @@ def registrar_mantenimiento():
         )
         db.session.add(nuevo_mp)
 
-    # Opcional: actualizar kilometraje_actual en Unidades si existe campo
-    try:
-        if unidad.kilometraje_actual is None or (kilometraje and kilometraje > (unidad.kilometraje_actual or 0)):
-            unidad.kilometraje_actual = kilometraje
-            db.session.add(unidad)
-    except Exception:
-        pass
+    # Actualizar kilometraje actual de la unidad
+    if unidad.kilometraje_actual is None or kilometraje > (unidad.kilometraje_actual or 0):
+        unidad.kilometraje_actual = kilometraje
+        db.session.add(unidad)
 
     db.session.commit()
     return jsonify({"message":"Mantenimiento registrado y programado actualizado."}), 201
@@ -3468,20 +4987,30 @@ def registrar_mantenimiento():
 # ---------------------
 @app.route('/mantenimientos', methods=['GET'])
 def listar_mantenimientos():
-    mantenimientos = Mantenimientos.query.order_by(Mantenimientos.fecha_realizacion.desc()).all()
+    mantenimientos = Mantenimientos.query.order_by(
+        Mantenimientos.fecha_realizacion.desc()
+    ).all()
+
     salida = []
     for m in mantenimientos:
         salida.append({
             "id_mantenimiento": m.id_mantenimiento,
+            "id_mantenimiento_programado": m.id_mantenimiento_programado,
             "id_unidad": m.id_unidad,
             "tipo_mantenimiento": m.tipo_mantenimiento,
-            "fecha_realizacion": m.fecha_realizacion.isoformat(),
-            "kilometraje": m.kilometraje,
             "descripcion": m.descripcion,
+            "fecha_realizacion": m.fecha_realizacion.isoformat() if m.fecha_realizacion else None,
+            "kilometraje": m.kilometraje,
             "realizado_por": m.realizado_por,
-            "costo": str(m.costo) if m.costo is not None else None
+            "empresa_garantia": m.empresa_garantia,
+            "cobertura_garantia": m.cobertura_garantia,
+            "costo": str(m.costo) if m.costo is not None else None,
+            "observaciones": m.observaciones,
+            "url_comprobante": m.url_comprobante
         })
+
     return jsonify(salida)
+
 
 #===================================================================================
 #filteraciones
@@ -3660,6 +5189,456 @@ def get_verificaciones():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+##empresas
+#======================================================
+
+# --------- Obtener todas las empresas ---------
+@app.route('/empresas', methods=['GET'])
+def get_empresas():
+    empresas = Empresa.query.all()
+    resultado = []
+    for e in empresas:
+        resultado.append({
+            'id_empresa': e.id_empresa,
+            'razon_social': e.razon_social,
+            'rfc': e.rfc,
+            'regimen_fiscal': e.regimen_fiscal,
+            'nombre_comercial': e.nombre_comercial,
+            'direccion': e.direccion,
+            'inicio_operaciones': e.inicio_operaciones.strftime('%Y-%m-%d'),
+            'estatus': e.estatus,
+            'actividad_economica': e.actividad_economica
+        })
+    return jsonify(resultado)
+
+# --------- Insertar empresa ---------
+@app.route('/empresas', methods=['POST'])
+def crear_empresa():
+    data = request.get_json()
+    nueva_empresa = Empresa(
+        razon_social=data.get('razon_social'),
+        rfc=data.get('rfc'),
+        regimen_fiscal=data.get('regimen_fiscal'),
+        nombre_comercial=data.get('nombre_comercial'),
+        direccion=data.get('direccion'),
+        inicio_operaciones=date.fromisoformat(data.get('inicio_operaciones')),
+        estatus=data.get('estatus'),
+        actividad_economica=data.get('actividad_economica')
+    )
+    db.session.add(nueva_empresa)
+    db.session.commit()
+    return jsonify({'message': 'Empresa creada', 'id_empresa': nueva_empresa.id_empresa})
+
+# --------- Actualizar empresa ---------
+@app.route('/empresas/<int:id_empresa>', methods=['PUT'])
+def actualizar_empresa(id_empresa):
+    data = request.get_json()
+    empresa = Empresa.query.get(id_empresa)
+    if not empresa:
+        return jsonify({'message': 'Empresa no encontrada'}), 404
+    empresa.razon_social = data.get('razon_social')
+    empresa.rfc = data.get('rfc')
+    empresa.regimen_fiscal = data.get('regimen_fiscal')
+    empresa.nombre_comercial = data.get('nombre_comercial')
+    empresa.direccion = data.get('direccion')
+    empresa.inicio_operaciones = date.fromisoformat(data.get('inicio_operaciones'))
+    empresa.estatus = data.get('estatus')
+    empresa.actividad_economica = data.get('actividad_economica')
+    db.session.commit()
+    return jsonify({'message': 'Empresa actualizada'})
+
+# --------- Eliminar empresa ---------
+@app.route('/empresas/<int:id_empresa>', methods=['DELETE'])
+def eliminar_empresa(id_empresa):
+    empresa = Empresa.query.get(id_empresa)
+    if not empresa:
+        return jsonify({'message': 'Empresa no encontrada'}), 404
+    db.session.delete(empresa)
+    db.session.commit()
+    return jsonify({'message': 'Empresa eliminada'})
+
+
+
+# -------------------------------
+# Listar sucursales (opcional por empresa)
+# -------------------------------
+@app.route("/sucursales", methods=["GET"])
+def get_sucursal():
+    id_empresa = request.args.get("empresa")
+    if id_empresa:
+        sucursales = Sucursal.query.filter_by(id_empresa=id_empresa).all()
+    else:
+        sucursales = Sucursal.query.all()
+    return jsonify([{
+        "id_sucursal": s.id_sucursal,
+        "nombre": s.nombre,
+        "direccion": s.direccion,
+        "telefono": s.telefono,
+        "correo": s.correo,
+        "horario": s.horario,
+        "id_empresa": s.id_empresa
+    } for s in sucursales])
+
+# -------------------------------
+# Crear sucursal
+# -------------------------------
+@app.route("/sucursales", methods=["POST"])
+def create_sucursal():
+    data = request.get_json()
+    # Validar empresa
+    empresa = Empresa.query.get(data.get("id_empresa"))
+    if not empresa:
+        return jsonify({"error": "La empresa no existe"}), 400
+
+    nueva = Sucursal(
+        nombre=data.get("nombre"),
+        direccion=data.get("direccion"),
+        telefono=data.get("telefono"),
+        correo=data.get("correo"),
+        horario=data.get("horario"),
+        id_empresa=data.get("id_empresa")
+    )
+    db.session.add(nueva)
+    db.session.commit()
+    return jsonify({"message": "Sucursal creada exitosamente", "id_sucursal": nueva.id_sucursal})
+
+# -------------------------------
+# Actualizar sucursal
+# -------------------------------
+@app.route("/sucursales/<int:id>", methods=["PUT"])
+def update_sucursal(id):
+    sucursal = Sucursal.query.get_or_404(id)
+    data = request.get_json()
+    # Validar empresa si se actualiza
+    if "id_empresa" in data:
+        empresa = Empresa.query.get(data["id_empresa"])
+        if not empresa:
+            return jsonify({"error": "La empresa no existe"}), 400
+        sucursal.id_empresa = data["id_empresa"]
+
+    sucursal.nombre = data.get("nombre", sucursal.nombre)
+    sucursal.direccion = data.get("direccion", sucursal.direccion)
+    sucursal.telefono = data.get("telefono", sucursal.telefono)
+    sucursal.correo = data.get("correo", sucursal.correo)
+    sucursal.horario = data.get("horario", sucursal.horario)
+
+    db.session.commit()
+    return jsonify({"message": "Sucursal actualizada exitosamente"})
+
+# -------------------------------
+# Eliminar sucursal
+# -------------------------------
+@app.route("/sucursales/<int:id>", methods=["DELETE"])
+def delete_sucursal(id):
+    sucursal = Sucursal.query.get_or_404(id)
+    db.session.delete(sucursal)
+    db.session.commit()
+    return jsonify({"message": "Sucursal eliminada exitosamente"})
+
+
+
+
+#===================================================================
+#FILTROS
+#=====================================================================
+@app.route('/api/placas', methods=['GET'])
+def listar_placas():
+    try:
+        search = request.args.get("search", "", type=str)
+        unidad = request.args.get("unidad", "", type=str)
+        vigencia_inicio = request.args.get("vigencia_inicio", "", type=str)
+        vigencia_fin = request.args.get("vigencia_fin", "", type=str)
+        page = request.args.get("page", 1, type=int)
+        per_page = request.args.get("perPage", 10, type=int)
+
+        query = Placas.query
+
+        # Filtro: búsqueda general
+        if search:
+            like = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Placas.placa.like(like),
+                    Placas.folio.like(like)
+                )
+            )
+
+        # Filtro: unidad
+        if unidad:
+            try:
+                unidad = int(unidad)
+                query = query.filter(Placas.id_unidad == unidad)
+            except ValueError:
+                pass
+
+        # Filtro: vigencia inicio
+        if vigencia_inicio:
+            fi = datetime.strptime(vigencia_inicio, "%Y-%m-%d").date()
+            query = query.filter(Placas.fecha_vigencia >= fi)
+
+        # Filtro: vigencia fin
+        if vigencia_fin:
+            ff = datetime.strptime(vigencia_fin, "%Y-%m-%d").date()
+            query = query.filter(Placas.fecha_vigencia <= ff)
+
+        # Paginación
+        total = query.count()
+        placas = (
+            query.order_by(Placas.fecha_vigencia.asc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+
+        return jsonify({
+            "total": total,
+            "data": [p.to_dict() for p in placas]
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+@app.route('/api/dashboard/unidades_completo', methods=['GET'])
+def dashboard_unidades_completo():
+    conn = db.engine.raw_connection()
+    try:
+        cursor = conn.cursor()
+
+        id_empresa = request.args.get('id_empresa')
+        sucursal = request.args.get('sucursal')
+
+        filtros = []
+        params = []
+
+        if id_empresa:
+            filtros.append("U.id_empresa = %s")
+            params.append(id_empresa)
+
+        if sucursal:
+            filtros.append("U.sucursal = %s")
+            params.append(sucursal)
+
+        where_clause = f"WHERE {' AND '.join(filtros)}" if filtros else ""
+
+        # ===================================================================
+        # TOTALES GENERALES
+        # ===================================================================
+        query = f"""
+        SELECT
+            COUNT(U.id_unidad) AS total_unidades,
+            COUNT(G.id_garantia) AS total_polizas
+        FROM Unidades U
+        LEFT JOIN (
+            SELECT * FROM Garantias G1
+            WHERE G1.id_garantia = (
+                SELECT G2.id_garantia 
+                FROM Garantias G2 
+                WHERE G2.id_unidad = G1.id_unidad 
+                ORDER BY G2.vigencia DESC LIMIT 1
+            )
+        ) G ON U.id_unidad = G.id_unidad
+        {where_clause};
+        """
+        cursor.execute(query, tuple(params))
+        row = cursor.fetchone()
+        columnas = [desc[0] for desc in cursor.description]
+        totales_sql = dict(zip(columnas, row))
+
+        total_unidades = totales_sql["total_unidades"]
+        total_polizas = totales_sql["total_polizas"]
+
+        # ===================================================================
+        # POR SUCURSAL (DETALLE REAL CON NOMBRE DE SUCURSAL)
+        # ===================================================================
+        query_sucursal = f"""
+        SELECT
+            U.id_unidad,
+            U.marca,
+            U.vehiculo,
+            S.nombre AS sucursal,
+            MAX(V.ultima_verificacion) AS ultima_verificacion,
+            MAX(V.holograma) AS holograma,
+            MAX(V.engomado) AS engomado,
+            (
+                SELECT COUNT(*) 
+                FROM Garantias G 
+                WHERE G.id_unidad = U.id_unidad
+            ) AS polizas
+        FROM Unidades U
+        LEFT JOIN (
+            SELECT * FROM VerificacionVehicular V1
+            WHERE V1.id_verificacion = (
+                SELECT V2.id_verificacion 
+                FROM VerificacionVehicular V2 
+                WHERE V2.id_unidad = V1.id_unidad 
+                ORDER BY V2.ultima_verificacion DESC LIMIT 1
+            )
+        ) V ON U.id_unidad = V.id_unidad
+        LEFT JOIN Sucursales S ON U.sucursal = S.id_sucursal
+        {where_clause}
+        GROUP BY U.id_unidad, U.marca, U.vehiculo, S.nombre;
+        """
+        cursor.execute(query_sucursal, tuple(params))
+        columns_suc = [desc[0] for desc in cursor.description]
+        sucursales_raw = cursor.fetchall()
+
+        hoy = datetime.today().date()
+        sucursales = {}
+
+        for row in sucursales_raw:
+            s = dict(zip(columns_suc, row))
+            suc = s["sucursal"] or "N/A"
+
+            if suc not in sucursales:
+                sucursales[suc] = {
+                    "sucursal": suc,
+                    "unidades": 0,
+                    "polizas": 0,
+                    "verificacion_activa": 0,
+                    "verificacion_vencida": 0,
+                    "sin_verificacion": 0,
+                    "proxima_verificacion": None,
+                    "estado_verificacion": "N/A"
+                }
+
+            sucursales[suc]["unidades"] += 1
+            sucursales[suc]["polizas"] += s["polizas"]
+
+            fecha_base = s.get("ultima_verificacion")
+            holo = (s.get("holograma") or "").strip()
+            eng = (s.get("engomado") or "").strip()
+
+            if fecha_base:
+                if isinstance(fecha_base, datetime):
+                    fecha_base = fecha_base.date()
+                else:
+                    fecha_base = datetime.strptime(str(fecha_base), "%Y-%m-%d").date()
+
+                proxima = calcular_siguiente_verificacion(fecha_base, holo, eng)
+                if proxima:
+                    proxima_str = proxima.strftime("%Y-%m-%d")
+                    sucursales[suc]["proxima_verificacion"] = proxima_str
+
+                    if hoy > proxima:
+                        sucursales[suc]["verificacion_vencida"] += 1
+                        sucursales[suc]["estado_verificacion"] = "ATRASADA"
+                    else:
+                        sucursales[suc]["verificacion_activa"] += 1
+                        sucursales[suc]["estado_verificacion"] = "EN TIEMPO"
+                else:
+                    sucursales[suc]["sin_verificacion"] += 1
+                    sucursales[suc]["estado_verificacion"] = "PENDIENTE"
+            else:
+                sucursales[suc]["sin_verificacion"] += 1
+                sucursales[suc]["estado_verificacion"] = "PENDIENTE"
+
+        # ===================================================================
+        # POR ASEGURADORA
+        # ===================================================================
+        query_aseguradora = f"""
+        SELECT
+            g.aseguradora,
+            COUNT(g.id_garantia) AS total_polizas
+        FROM Garantias g
+        JOIN Unidades u ON g.id_unidad = u.id_unidad
+        {where_clause.replace('U.', 'u.')}
+        GROUP BY g.aseguradora;
+        """
+        cursor.execute(query_aseguradora, tuple(params))
+        columns_aseg = [desc[0] for desc in cursor.description]
+        aseguradoras = [dict(zip(columns_aseg, row)) for row in cursor.fetchall()]
+
+        # ===================================================================
+        # UNIDADES SIN POLIZA
+        # ===================================================================
+        query_sin_poliza = f"""
+        SELECT u.id_unidad, u.marca, u.vehiculo, S.nombre AS sucursal
+        FROM Unidades u
+        LEFT JOIN Garantias g ON g.id_unidad = u.id_unidad
+        LEFT JOIN Sucursales S ON u.sucursal = S.id_sucursal
+        {where_clause}
+        WHERE g.id_garantia IS NULL;
+        """
+        cursor.execute(query_sin_poliza, tuple(params))
+        columns_sin = [desc[0] for desc in cursor.description]
+        sin_poliza = [dict(zip(columns_sin, row)) for row in cursor.fetchall()]
+
+        # ===================================================================
+        # SALIDA FINAL
+        # ===================================================================
+        dashboard = {
+            "totales": {
+                "total_unidades": total_unidades,
+                "total_polizas": total_polizas,
+                "verificacion_activa": sum(s["verificacion_activa"] for s in sucursales.values()),
+                "verificacion_vencida": sum(s["verificacion_vencida"] for s in sucursales.values()),
+                "sin_verificacion": sum(s["sin_verificacion"] for s in sucursales.values()),
+            },
+            "por_sucursal": list(sucursales.values()),
+            "por_aseguradora": aseguradoras,
+            "unidades_sin_poliza": sin_poliza
+        }
+
+        return jsonify(dashboard), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Error al generar dashboard completo", "detalle": str(e)}), 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+##===================================================================
+#Alertas del sistema mensajes
+#=====================================================================                                                      
+from sqlalchemy import cast, Integer
+
+@app.route("/alertas/usuario/<int:user_id>", methods=["GET"])
+def get_alertas_usuario(user_id):
+    
+    # Obtener usuario para verificar rol
+    usuario = Usuarios.query.get(user_id)
+    if not usuario:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+    
+    
+    if usuario.rol == "admin":
+        # Admin: devuelve todas las alertas
+        alertas = Alerta.query.order_by(Alerta.fecha_generada.desc()).all()
+        print(f"📬 Admin, total alertas: {len(alertas)}")
+    else:
+        # Chofer: devuelve solo alertas asignadas a su id_chofer
+        if not usuario.id_chofer:
+            alertas = []
+        else:
+            alertas = Alerta.query.filter(
+                cast(Alerta.detalle['id_chofer'], Integer) == usuario.id_chofer
+            ).order_by(Alerta.fecha_generada.desc()).all()
+            print(f"📬 Chofer, alertas encontradas para id_chofer {usuario.id_chofer}: {len(alertas)}")
+
+    # Construir resultado
+    resultado = []
+    for a in alertas:
+        resultado.append({
+            "id_alerta": a.id_alerta,
+            "id_unidad": a.id_unidad,
+            "tipo_alerta": a.tipo_alerta,
+            "descripcion": a.descripcion,
+            "estado": a.estado,
+            "fecha_generada": a.fecha_generada.isoformat(),
+            "fecha_resuelta": a.fecha_resuelta.isoformat() if a.fecha_resuelta else None,
+            "detalle": a.detalle
+        })
+
+    return jsonify({"alertas": resultado})
+
+
 
 
 if __name__ == '__main__':

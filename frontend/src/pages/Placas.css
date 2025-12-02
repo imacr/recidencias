@@ -1,97 +1,100 @@
-/* Modal interno */
-.edit-placa-container {
-  padding: 20px;
-  background-color: #fff;
-  border-radius: 8px;
-  width: 500px;
-  max-width: 90%;
-  margin: 0 auto;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-}
-
-.edit-placa-container h2 {
-  text-align: center;
+/* Contenedor compacto */
+.form-registro-placa {
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  max-width: 850px;
   margin-bottom: 20px;
-  font-size: 1.5rem;
-  color: #333;
 }
 
-.edit-placa-container div {
-  margin-bottom: 12px;
+/* Título compacto */
+.form-registro-placa h3 {
+  font-size: 1rem;
+  margin: 0 0 10px 0;
+}
+
+/* GRID TOTALMENTE ADAPTABLE */
+.grid-placa {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+/* Grupos compactos */
+.form-registro-placa .form-group {
   display: flex;
   flex-direction: column;
 }
 
-.edit-placa-container label {
-  margin-bottom: 4px;
-  font-weight: 600;
-  color: #555;
+.form-registro-placa label {
+  font-size: 0.8rem;
+  margin-bottom: 3px;
 }
 
-.edit-placa-container input[type="text"],
-.edit-placa-container input[type="date"],
-.edit-placa-container select,
-.edit-placa-container input[type="file"] {
-  padding: 6px 10px;
-  font-size: 0.95rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+.form-registro-placa input {
+  padding: 5px 6px;
+  border: 1px solid #bbb;
+  border-radius: 5px;
+  font-size: 0.85rem;
 }
 
-.edit-placa-container input[type="file"] {
-  padding: 3px;
-}
-
-.edit-placa-container button {
-  padding: 8px 14px;
-  font-size: 0.95rem;
+/* Botón */
+.btn-placa-registrar {
+  margin-top: 12px;
+  width: 100%;
+  background: #c20000;
+  color: white;
   border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.edit-placa-container button:first-of-type {
-  background-color: #4CAF50;
-  color: #fff;
-}
-
-.edit-placa-container button:last-of-type {
-  background-color: #f44336;
-  color: #fff;
-}
-
-.edit-placa-container button:hover {
-  opacity: 0.9;
-}
-
-/* Botones principales */
-.edit-placa-container button {
-  padding: 8px 16px;
-  font-size: 0.95rem;
-  border: none;
+  padding: 8px;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  font-weight: 600;
+  font-size: 0.9rem;
 }
 
-/* Botón Actualizar */
-.edit-placa-container button.update-btn {
-  background-color: #1976d2; /* azul más moderno */
-  color: #fff;
-  margin-right: 8px;
+.btn-placa-registrar:hover {
+  background: #a00000;
 }
 
-.edit-placa-container button.update-btn:hover {
-  background-color: #1565c0;
+/* Contenedor general */
+.placas-layout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 20px;
 }
 
-/* Botón Cancelar */
-.edit-placa-container button.cancel-btn {
-  background-color: #e0e0e0; /* gris claro */
-  color: #333;
+/* Sección superior (verificar y registro) */
+.top-section {
+  background: #ffffff;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
 }
 
-.edit-placa-container button.cancel-btn:hover {
-  background-color: #bdbdbd;
+.filtros-container {
+  display: flex;
+  flex-wrap: wrap; /* para que se acomoden si la pantalla es pequeña */
+  align-items:end; /* alineación vertical */
+  gap: 10px; /* separación horizontal entre elementos */
+  justify-content: flex-start; /* todo pegado a la izquierda */
+  margin-bottom: 15px;
+  padding-left: 0; /* opcional si quieres que toque la izquierda de la pantalla */
+}
+
+.filtros-container label.pagination-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.9rem;
+}
+
+.filtros-container input[type="text"] {
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  width: 200px;
+}
+
+.filtros-container .css-yk16xz-control { 
+  min-height: 35px; /* ajusta el tamaño del select de react-select */
 }

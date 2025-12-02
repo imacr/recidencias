@@ -1,32 +1,33 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  display: flex;
+  display: flex ;
   align-items: center;
   justify-content: center;
-  padding: 20px; /* un poco menos que 30px */
+  padding: 20px;
   backdrop-filter: blur(4px);
-  background: rgba(0, 0, 0, 0.4); /* agrega un overlay semi-transparente elegante */
+  background: rgba(0, 0, 0, 0.4);
   z-index: 1999;
   overflow: auto;
-  
 }
 
 .modal-contentido {
-  background: #ffffff; /* fondo blanco minimalista */
-  border: 1.5px solid #c62828; /* borde rojo elegante, menos grueso */
+  background: #ffffff;
+  border: 1.5px solid #c62828;
   border-radius: 12px;
   padding: 20px 25px;
-  max-width: 700px; /* un poco más ancho para 2 columnas */
-  width: 95%; /* adaptable */
-  color: #111; /* texto oscuro elegante */
+  max-width: 700px;
+  width: 95%;
+
+  max-height: 80vh; /* limita la altura al 80% de la ventana */
+  overflow-y: auto; /* habilita scroll vertical interno */
+  color: #111;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25); /* sombra más suave */
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
   animation: modalFadeIn 0.3s ease;
   position: relative;
   z-index: 1100;
   align-items: center;
-
 }
 
 .modal-close-btn {
